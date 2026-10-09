@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+*.log
+artifacts/*.png
+artifacts/browser-report.json
+test-results/
+playwright-report/
+.venv-audio/
+.local/
+__pycache__/
+artifacts/audio-*/

@@ -1,0 +1,28 @@
+{
+  "passed": true,
+  "checkedAt": "2026-09-16T03:11:20.676Z",
+  "originGuard": true,
+  "tokenGuard": true,
+  "concurrentGuard": true,
+  "cancellation": true,
+  "completed": true,
+  "stemsVerified": 3,
+  "duration": 8,
+  "alignment": [
+    {
+      "position": 0.05,
+      "lagSeconds": 0,
+      "correlation": 1
+    },
+    {
+      "position": 0.5,
+      "lagSeconds": 0,
+      "correlation": 1
+    },
+    {
+      "position": 0.9,
+      "lagSeconds": 0,
+      "correlation": 1
+    }
+  ]
+}

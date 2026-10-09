@@ -1,0 +1,5 @@
+audio-separator[cpu]==0.47.0
+imageio-ffmpeg==0.6.0
+librosa==0.11.0
+soundfile==0.14.0
+torchcrepe==0.0.24

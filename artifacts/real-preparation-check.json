@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "checkedAt": "2026-09-16T03:13:15.454Z",
+  "hash": "0a73e68149b4e3e771419856a42b6e4edaf54dd8ba2a53fc0cac8cb7b6cea7d8",
+  "duration": 267.81895691609975,
+  "notes": 129,
+  "detectedSeconds": 32.28,
+  "imported": true,
+  "persisted": true,
+  "instrumentalStarted": true,
+  "pageErrors": [],
+  "limitation": "Replayed the real CLI output through intercepted API responses; auditory quality not assessed."
+}

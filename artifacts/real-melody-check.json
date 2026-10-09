@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "checkedAt": "2026-09-16T21:00:52.057Z",
+  "hash": "0a73e68149b4e3e771419856a42b6e4edaf54dd8ba2a53fc0cac8cb7b6cea7d8",
+  "duration": 267.81895691609975,
+  "notes": 493,
+  "detectedSeconds": 125.86,
+  "imported": true,
+  "persisted": true,
+  "instrumentalStarted": true,
+  "reanalysis": true,
+  "pageErrors": [],
+  "limitation": "Replayed the real local output through intercepted API responses; auditory quality not assessed."
+}
