@@ -11,6 +11,8 @@ test('live tuner shows signed cents and Hz, rejects silence and follows capture 
     };
   });
   await page.goto('/'); await page.getByRole('slider', { name: 'Compensar retraso' }).fill('300');
+  // Half a semitone only counts as off pitch under the tuner-like rule.
+  await page.getByRole('combobox', { name: 'Exigencia de afinación' }).selectOption('strict');
   await page.getByRole('button', { name: 'Empezar a cantar', exact: true }).click();
   const meter = page.getByRole('meter', { name: 'Desviación de afinación' });
   await expect(meter).toBeVisible({ timeout: 7000 });

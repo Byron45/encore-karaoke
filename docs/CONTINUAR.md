@@ -1,6 +1,18 @@
-# Punto de continuación · etapa 2E terminada
+# Punto de continuación · revisión 2F terminada
 
-## Última revisión: prueba real del usuario y corrección de retroalimentación
+## Última revisión: auditoría y evaluación para cantar en condiciones reales
+
+9 de octubre de 2026. Una auditoría independiente confirmó que el motor es correcto en laboratorio y que el resultado real de 1.019 puntos no medía el canto: octava exacta, tolerancia de afinador, retraso sin medir, umbral de nivel fijo y música entrando por el micrófono. El proyecto pasó a ser un repositorio git; el commit `275aa80` conserva el estado anterior a estos cambios.
+
+Entrega 2F. `src/scoring.ts` pasa a `encore-intonation-3` con exigencias Relajada, Normal (por defecto) y Estricta; Estricta es la regla anterior sin cambios. `src/pitch-reference.ts` comparte `pitchError` entre puntuación y afinador. `src/capture.ts` mide en la cuenta atrás el ruido de fondo, el umbral de nivel y si se oyen los clics. `src/audio.ts` aplica el retraso que informa el equipo cuando no hay ajuste propio y, al terminar, `estimateOffset` propone otro si explica mejor el intento; `src/preferences.ts` guarda exigencia y retraso por micrófono. Resultado JSON versión 4 con `difficulty`, `levelGate` y `capture`. Corregidos: el escenario seguía con el mapa anterior tras «Guardar cambios», los trabajos cancelados dejaban temporales y «Probar micrófono» borraba el resultado.
+
+Verificado: 53 unitarias, 39 de navegador en una corrida completa (tras un último retoque de textos y estilos se repitieron solo las 6 afectadas), tipos y build; `tests/audio-service-check.mjs` con el modelo real, ahora afirmando que no quedan temporales. Voz sintética por el micrófono, worklet y puntuación reales: una octava abajo pasa de 0 a 9.744 en Normal; voz muy suave de 0 a 9.829; 150 ms de retraso propone 170 ms y recupera el resultado. Sobre el mapa de Luz de Día, un cantante simulado con σ=50 cents sube de 7.013 (Estricta) a 9.053 (Normal).
+
+No comprobado: voz humana, altavoces y micrófono físicos, auriculares Bluetooth. El retraso que informa el equipo puede no coincidir con el real. El mapa automático sigue fragmentado (mediana 0,18 s por nota); la tolerancia y la propuesta de retraso lo mitigan, no lo corrigen.
+
+Siguiente paso: cantar la misma canción con auriculares en exigencia Normal, aceptar la propuesta de retraso si aparece y repetir. Después, decidir entre mejorar el mapa (fusionar notas contiguas, alineación por sílabas) o importar mapas hechos a mano.
+
+## Revisión anterior: prueba real del usuario y corrección de retroalimentación
 
 16 de septiembre de 2026: el usuario compartió resultado v2 de Marta tiene un marcapasos (1019 puntos, referencia53,44 s, tono21,63 s, afinación25 %, cobertura40 %, señal44 %, análisis100 %, error175 cents, media firmada+11). Confirmó canto completo con micrófono de laptop SIN auriculares, final de unos30 s con vocalizaciones. Las cifras son coherentes; no permiten atribuir los ceros finales a silencio ni certificar afinación musical. Se explicó posible mezcla de altavoces y voz, sin afirmar causa demostrada.
 

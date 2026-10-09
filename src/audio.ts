@@ -1,23 +1,35 @@
 import { frequencyOf, song } from './song';
 import type { PlayableSong } from './library-model';
-import { ScoreTracker } from './scoring';
+import { estimateOffset, ScoreTracker } from './scoring';
+import type { Difficulty, Reading, Summary } from './scoring';
 import { MicrophoneInput, microphoneError } from './microphone';
 import type { ActiveMicrophone, InputReading } from './microphone';
 import type { Accompaniment } from './preparation';
 import { verifyStem } from './preparation';
-import { referenceMidiAt } from './pitch-reference';
+import { LEVEL_GATE, referenceMidiAt } from './pitch-reference';
+import { hearsCountIn, levelGate, noiseFloor, reportedLatency } from './capture';
 
 export type Mode = 'demo' | 'microphone';
-export type Summary = ReturnType<ScoreTracker['summary']>;
-export interface Frame { time: number; captureTime: number; frequency: number | null; rms: number; confidence: number; summary: Summary }
-export const emptyFrame = (): Frame => ({ time: -3, captureTime: -3, frequency: null, rms: 0, confidence: 0, summary: new ScoreTracker(song.notes).summary(0) });
+export type { Summary };
+export interface Frame { time: number; captureTime: number; frequency: number | null; rms: number; confidence: number; summary: Summary; gate: number; speakerBleed: boolean }
+export const emptyFrame = (): Frame => ({ time: -3, captureTime: -3, frequency: null, rms: 0, confidence: 0, summary: new ScoreTracker(song.notes).summary(0), gate: LEVEL_GATE, speakerBleed: false });
 
 export class KaraokeEngine {
   private context: AudioContext | null = null;
   private input: MicrophoneInput | null = null;
   private animation = 0;
   private disposed = false;
-  private origin = 0;
+  // Readings that arrive before the song clock exists belong to the count-in.
+  private origin = Infinity;
+  private warmup: InputReading[] = [];
+  private readings: Reading[] = [];
+  private calibrated = false;
+  private offsetMs = 0;
+  private automaticOffset = false;
+  private reportedLatencyMs: number | null = null;
+  private inputLatency = 0;
+  private noiseFloor: number | null = null;
+  private speakerBleed = false;
   private chart;
   private tracker;
   private deviceId;
@@ -27,17 +39,30 @@ export class KaraokeEngine {
   private latest = { frequency: null as number | null, rms: 0, confidence: 0, time: -Infinity };
   private lastDemoTime = -3;
   private lastPaint = 0;
-  constructor(options: { deviceId?: string; transpose?: number; song?: PlayableSong; accompaniment?: Accompaniment } = {}) {
+  constructor(options: { deviceId?: string; transpose?: number; song?: PlayableSong; accompaniment?: Accompaniment; difficulty?: Difficulty } = {}) {
     this.track = options.song || song;
     this.accompaniment = options.accompaniment || 'original';
     if (this.accompaniment !== 'original' && !this.track.prepared) throw new Error('Prepara las pistas en la biblioteca antes de elegir este acompañamiento.');
     if (this.track.audio && options.transpose) throw new Error('Los archivos importados se cantan en su registro original en esta etapa.');
     this.chart = this.track.notes.map(note => ({ ...note, midi: note.midi + (options.transpose || 0) }));
-    this.tracker = new ScoreTracker(this.chart);
+    this.tracker = new ScoreTracker(this.chart, options.difficulty || 'normal');
     this.deviceId = options.deviceId || '';
   }
 
-  async start(mode: Mode, guide: boolean, offsetMs: number, onFrame: (frame: Frame) => void, onFinish: (summary: Summary) => void, onError: (message: string) => void, onDevice: (device: ActiveMicrophone) => void = () => {}) {
+  /** Runs once as the count-in ends: settles the delay, the silence gate and the speaker check for this take. */
+  private calibrate() {
+    this.calibrated = true;
+    this.reportedLatencyMs = reportedLatency(this.context!, this.inputLatency);
+    if (this.automaticOffset) this.offsetMs = Math.max(0, Math.min(300, Math.round((this.reportedLatencyMs || 0) / 10) * 10));
+    this.noiseFloor = noiseFloor(this.warmup);
+    this.speakerBleed = hearsCountIn(this.warmup, this.origin);
+    this.tracker.gate = levelGate(this.noiseFloor, this.speakerBleed);
+    this.warmup = [];
+  }
+
+  /** A null offset uses the delay the device reports instead of a value the singer chose. */
+  async start(mode: Mode, guide: boolean, offsetMs: number | null, onFrame: (frame: Frame) => void, onFinish: (summary: Summary) => void, onError: (message: string) => void, onDevice: (device: ActiveMicrophone) => void = () => {}) {
+    this.automaticOffset = offsetMs === null; this.offsetMs = offsetMs ?? 0;
     try {
       this.context = new AudioContext({ latencyHint: 'interactive' });
       await this.context.resume();
@@ -55,10 +80,12 @@ export class KaraokeEngine {
         this.input = new MicrophoneInput(this.context);
         const ready = await this.input.open(this.deviceId, (data: InputReading) => {
           if (this.disposed) return;
-          const time = data.time - this.origin - offsetMs / 1000;
+          if (!this.calibrated) { if (data.time < this.origin - .1) this.warmup.push(data); else this.calibrate(); }
+          const time = data.time - this.origin;
           this.latest = data;
-          this.tracker.sample(time, data.span, data.frequency, data.confidence, data.rms);
-        }, onDevice, message => { this.stop(); onError(message); });
+          if (time > -1) this.readings.push({ time, span: data.span, frequency: data.frequency, confidence: data.confidence, rms: data.rms });
+          this.tracker.sample(time - this.offsetMs / 1000, data.span, data.frequency, data.confidence, data.rms);
+        }, device => { this.inputLatency = device.latency || 0; onDevice(device); }, message => { this.stop(); onError(message); });
         if (!ready || this.disposed) return;
       }
       this.origin = this.context.currentTime + 3;
@@ -80,8 +107,13 @@ export class KaraokeEngine {
           this.tracker.sample(time, time - this.lastDemoTime, frequency, 1, frequency ? 0.12 : 0);
           this.lastDemoTime = time;
         }
-        if (time >= this.track.duration + (mode === 'microphone' ? offsetMs / 1000 + 0.1 : 0)) {
-          const result = this.tracker.summary(this.track.duration);
+        if (time >= this.track.duration + (mode === 'microphone' ? this.offsetMs / 1000 + 0.1 : 0)) {
+          const result: Summary = this.tracker.summary(this.track.duration);
+          if (mode === 'microphone') result.capture = {
+            offsetMs: this.offsetMs, automaticOffset: this.automaticOffset, reportedLatencyMs: this.reportedLatencyMs, noiseFloor: this.noiseFloor, speakerBleed: this.speakerBleed,
+            // Leaked music follows the track, not the singer, so it says nothing about the delay.
+            suggestion: this.chart.length && !this.speakerBleed ? estimateOffset(this.chart, this.readings, this.offsetMs, this.tracker.difficulty, this.tracker.gate) : null,
+          };
           this.stop();
           onFinish(result);
           return;
@@ -89,8 +121,8 @@ export class KaraokeEngine {
         if (performance.now() - this.lastPaint > 32) {
           this.lastPaint = performance.now();
           const fresh = this.context.currentTime - this.latest.time < 0.2;
-          const captureTime = this.latest.time - this.origin - (mode === 'microphone' ? offsetMs / 1000 : 0);
-          onFrame({ time, captureTime, frequency: fresh ? this.latest.frequency : null, rms: fresh ? this.latest.rms : 0, confidence: fresh ? this.latest.confidence : 0, summary: this.tracker.summary(Math.max(0, time)) });
+          const captureTime = this.latest.time - this.origin - (mode === 'microphone' ? this.offsetMs / 1000 : 0);
+          onFrame({ time, captureTime, frequency: fresh ? this.latest.frequency : null, rms: fresh ? this.latest.rms : 0, confidence: fresh ? this.latest.confidence : 0, summary: this.tracker.summary(Math.max(0, time)), gate: this.tracker.gate, speakerBleed: this.speakerBleed });
         }
         this.animation = requestAnimationFrame(render);
       };
@@ -121,7 +153,8 @@ export class KaraokeEngine {
 
   private scheduleMusic(guide: boolean) {
     for (let beat = -3; beat < (this.track.audio ? 0 : this.track.duration); beat += 0.5) {
-      this.tone(beat < 0 ? 720 : 1200, this.origin + beat + 0.03, 0.05, beat < 0 ? 0.045 : 0.012);
+      // Over a recording the count-in is as loud as the music, so hearing it in the microphone reveals the speakers.
+      this.tone(beat < 0 ? 720 : 1200, this.origin + beat + 0.03, 0.05, beat < 0 ? this.track.audio ? 0.12 : 0.045 : 0.012);
     }
     for (let bar = 0; bar < (this.track.audio ? 0 : 8); bar++) {
       const chord = [[48, 52, 55], [45, 48, 52], [41, 45, 48], [43, 47, 50]][bar % 4];

@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { existsSync, createReadStream } from 'node:fs';
-import { mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,7 +28,20 @@ export function validLocalRequest(req) {
 async function clearDirectory(directory) {
   const resolved = path.resolve(directory);
   if (path.dirname(resolved) !== jobRoot || !/^[a-f0-9-]{36}$/.test(path.basename(resolved))) throw new Error('Directorio de trabajo no válido.');
-  await rm(resolved, { recursive: true, force: true });
+  // A worker that was just killed can keep its files locked for a moment on Windows.
+  await rm(resolved, { recursive: true, force: true, maxRetries: 12, retryDelay: 250 });
+}
+const discard = job => clearDirectory(job.dir).catch(error => console.warn(`[encore] No se pudo borrar el trabajo ${job.id}: ${error.message}`));
+/** Removes job folders left behind by a crash or an earlier failed cleanup. Recent ones may belong to another running server. */
+export async function sweepStaleJobs(maxAgeMs = 2 * 3600000, directory = jobRoot) {
+  const removed = [];
+  for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
+    if (!entry.isDirectory() || !/^[a-f0-9-]{36}$/.test(entry.name)) continue;
+    const target = path.join(directory, entry.name), info = await stat(target).catch(() => null);
+    if (!info || Date.now() - info.mtimeMs < maxAgeMs) continue;
+    await rm(target, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }).then(() => removed.push(entry.name)).catch(() => {});
+  }
+  return removed;
 }
 
 export function preparationPlugin() {
@@ -76,15 +89,16 @@ export function preparationPlugin() {
         job.state = 'complete'; job.progress = 100; job.stage = 'Pistas y borrador disponibles'; job.error = undefined;
       } catch (error) { job.state = 'failed'; job.error = error.message; }
       finally {
+        if (job.state === 'cancelled') { jobs.delete(job.id); if (active === job.id) active = null; await discard(job); return; }
         if (tail) await writeFile(path.join(job.dir, 'engine.log'), tail).catch(() => {});
-        if (job.state === 'cancelled') { await clearDirectory(job.dir).catch(() => {}); jobs.delete(job.id); }
         if (active === job.id) active = null;
       }
     });
   }
   const cleanup = setInterval(() => {
-    for (const job of jobs.values()) if (!job.child && active !== job.id && Date.now() - job.created > 2 * 3600000) { jobs.delete(job.id); void clearDirectory(job.dir).catch(() => {}); }
+    for (const job of jobs.values()) if (!job.child && active !== job.id && Date.now() - job.created > 2 * 3600000) { jobs.delete(job.id); void discard(job); }
   }, 60000); cleanup.unref();
+  void sweepStaleJobs();
 
   const middleware = async (req, res, next) => {
     const url = new URL(req.url || '/', 'http://localhost');

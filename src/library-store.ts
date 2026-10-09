@@ -21,7 +21,11 @@ async function transaction<T>(mode: IDBTransactionMode, operation: (store: IDBOb
   });
 }
 export const listSongs = () => transaction('readonly', store => store.getAll()) as Promise<LibrarySong[]>;
-export async function saveSong(record: LibrarySong) { await transaction('readwrite', store => store.put(record)); }
+export async function saveSong(record: LibrarySong) {
+  await transaction('readwrite', store => store.put(record));
+  // Ask the browser not to evict the library under storage pressure; it may decline silently.
+  void navigator.storage?.persist?.().catch(() => {});
+}
 export async function removeSong(id: string) { await transaction('readwrite', store => store.delete(id)); }
 
 export async function loadAudio(file: File): Promise<LibrarySong> {

@@ -13,7 +13,7 @@ export function resultDocument(summary: Summary, mode: Mode, session: SessionInf
   const scored = song.notes.length > 0;
   const experimentalMap = song.notes.some(n => n.source === 'automatic');
   return {
-    version: 3, song: song.title, mode: !scored && mode === 'demo' ? 'listen' : mode,
+    version: 4, song: song.title, mode: !scored && mode === 'demo' ? 'listen' : mode,
     simulated: scored && mode === 'demo', scored, createdAt: new Date().toISOString(), ...session,
     experimentalMap,
     ...(scored ? {

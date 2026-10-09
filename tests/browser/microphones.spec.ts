@@ -106,7 +106,10 @@ test('full synthetic singing through the microphone pipeline gives nonzero per-p
   expect(result.phrases.every((accuracy: number) => accuracy > 60)).toBe(true);
   expect(result.analyzedCoverage).toBeGreaterThan(95);
   expect(result.coverage).toBeGreaterThan(80);
-  expect(result.version).toBe(3);
+  expect(result.version).toBe(4);
+  expect(result.difficulty).toBe('normal');
+  expect(result.capture.automaticOffset).toBe(true);
+  expect(result.capture.speakerBleed).toBe(false);
   expect(result.phraseDiagnostics).toHaveLength(result.phrases.length);
   expect(result.phraseDiagnostics.every((phrase: any) => phrase.analyzedSeconds > 0 && phrase.sungSeconds > 0 && phrase.intonation > 60)).toBe(true);
   expect(await page.locator('.result-heading h2').innerText()).toBe(result.feedback.title);

@@ -23,7 +23,8 @@ class PitchProcessor extends AudioWorkletProcessor {
       for (let i = 0; i < compact.length; i++) {
         for (let j = 0; j < stride; j++) compact[i] += this.buffer[i * stride + j] / stride;
       }
-      const result = detectPitch(compact, sampleRate / stride);
+      // Analyse quiet input too: the app decides the silence gate for each microphone (MIN_LEVEL_GATE).
+      const result = detectPitch(compact, sampleRate / stride, 0.0015);
       this.port.postMessage({ ...result, time: currentTime + input.length / sampleRate - this.buffer.length / (2 * sampleRate), span: this.hopSize / sampleRate });
     }
     return true;

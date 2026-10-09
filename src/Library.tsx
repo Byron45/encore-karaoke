@@ -17,7 +17,7 @@ function saveFile(value: Blob, name: string) {
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'No se pudo completar la operación.';
 const seconds = (value: number) => `${Math.floor(value / 60)}:${Math.floor(value % 60).toString().padStart(2, '0')}`;
 
-export function Library({ onChoose, onOriginal, onDirtyChange, onBusyChange }: { onChoose: (record: LibrarySong) => void; onOriginal: () => void; onDirtyChange: (value: boolean) => void; onBusyChange: (value: boolean) => void }) {
+export function Library({ onChoose, onOriginal, onDirtyChange, onBusyChange, onStored }: { onChoose: (record: LibrarySong) => void; onOriginal: () => void; onDirtyChange: (value: boolean) => void; onBusyChange: (value: boolean) => void; onStored: (id: string, record: LibrarySong | null) => void }) {
   const [records, setRecords] = useState<LibrarySong[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -53,7 +53,7 @@ export function Library({ onChoose, onOriginal, onDirtyChange, onBusyChange }: {
   async function destroy(record: LibrarySong) {
     if (!window.confirm(`¿Eliminar «${record.title}» y su audio de este navegador?`)) return;
     setError(''); setBusy(true);
-    try { await removeSong(record.id); setRecords(items => items.filter(item => item.id !== record.id)); setSelected(null); setDirty(false); }
+    try { await removeSong(record.id); setRecords(items => items.filter(item => item.id !== record.id)); setSelected(null); setDirty(false); onStored(record.id, null); }
     catch (error) { setError(errorText(error)); }
     finally { setBusy(false); }
   }
@@ -70,7 +70,7 @@ export function Library({ onChoose, onOriginal, onDirtyChange, onBusyChange }: {
         <button className="text-button" disabled={blocked || loading} onClick={() => void add()}><Plus size={15}/> Añadir ejemplo editable</button>
         <button className="text-button" disabled={blocked} onClick={() => { if (canLeave()) onOriginal(); }}><ArrowLeft size={15}/> Volver al ejercicio original</button>
       </aside>
-      {current ? <SongEditor key={`${current.id}-${editorEpoch}`} onSavingChange={setSaving} record={current} onDirty={setDirty} onSave={async record => { await saveSong(record); setRecords(items => items.map(item => item.id === record.id ? record : item)); setDirty(false); }} onChoose={onChoose} onDelete={() => void destroy(current)}/> : <div className="library-welcome"><Music2 size={44}/><h2>De tu archivo al escenario.</h2><ol><li>Carga y escucha tu audio.</li><li>Identifica el título y la versión.</li><li>Busca o pega la letra completa.</li><li>Guarda y empieza a cantar.</li></ol><p>Puedes cantar sin puntuación con tu letra y audio. Prepara voz, instrumental y un mapa automático desde la ficha de tu canción.</p></div>}
+      {current ? <SongEditor key={`${current.id}-${editorEpoch}`} onSavingChange={setSaving} record={current} onDirty={setDirty} onSave={async record => { await saveSong(record); setRecords(items => items.map(item => item.id === record.id ? record : item)); setDirty(false); onStored(record.id, record); }} onChoose={onChoose} onDelete={() => void destroy(current)}/> : <div className="library-welcome"><Music2 size={44}/><h2>De tu archivo al escenario.</h2><ol><li>Carga y escucha tu audio.</li><li>Identifica el título y la versión.</li><li>Busca o pega la letra completa.</li><li>Guarda y empieza a cantar.</li></ol><p>Puedes cantar sin puntuación con tu letra y audio. Prepara voz, instrumental y un mapa automático desde la ficha de tu canción.</p></div>}
     </div>
   </section>;
 }

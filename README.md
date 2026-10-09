@@ -4,6 +4,8 @@ Aplicación web local en React + TypeScript. Nombre provisional. Etapa 2: **bibl
 
 Ampliaciones implementadas: **LRCLIB y letras completas/LRC**, separación vocal local y mapa automático. La etapa **2D** añade análisis CREPE + pYIN, curvas de afinación, mejora del mapa reutilizando la voz aislada y un afinador conectado a la evaluación. Evidencia y límites en `docs/EVALUACION-02D.md`.
 
+La revisión **2F** adapta la evaluación a cantar en condiciones reales: tres niveles de exigencia con octava libre, compensación de retraso automática con propuesta de ajuste, nivel de micrófono adaptable y aviso cuando la música entra por el micrófono. Ver «Cantar en condiciones reales».
+
 ## Ejecutar
 
 Requisitos: Node.js 22.18 o superior y npm.
@@ -30,7 +32,7 @@ El audio de entrada se procesa en un AudioWorklet del dispositivo. No se graba n
 4. Opcionalmente busca el título y artista en **Identificar en MusicBrainz**. Revisa edición y duración antes de asociar. Esto no obtiene audio, letra ni notas.
 5. Guarda el borrador o, con el mapa válido, pulsa **Guardar y cantar**. Puedes exportar audio y mapa para conservar una copia.
 
-La biblioteca se guarda en IndexedDB del mismo navegador y origen. Abrir `localhost` en lugar de `127.0.0.1`, cambiar de puerto o navegador crea otro espacio. Borrar los datos del sitio elimina la biblioteca; no hay copia en la nube. La elección de micrófono se recuerda en localStorage.
+La biblioteca se guarda en IndexedDB del mismo navegador y origen. Abrir `localhost` en lugar de `127.0.0.1`, cambiar de puerto o navegador crea otro espacio. Borrar los datos del sitio elimina la biblioteca; no hay copia en la nube. Al guardar se solicita al navegador almacenamiento persistente; puede concederlo o no sin avisar. La elección de micrófono, la exigencia de afinación y la compensación de cada micrófono se recuerdan en localStorage.
 
 El mapa puede editarse manualmente o generarse como **borrador automático experimental**. Cada mapa JSON Encore versión 1 (manual), 2 (automático) o 3 (con curvas de afinación) se vincula al contenido exacto del audio mediante SHA-256 y a su duración. Se conservan los mapas anteriores. Un mapa de otro archivo se rechaza, aunque tenga el mismo título. Se admiten 2.000 notas, 40.000 puntos de curvas en total y 12 MB de JSON. Cambiar los metadatos MusicBrainz no altera la pista ni demuestra que sus notas sean correctas.
 
@@ -57,7 +59,7 @@ Script independiente (elige una carpeta de salida nueva):
 
 Produce `vocals.wav`, `instrumental.wav`, `reduced.wav` y `manifest.json`. El script conserva el archivo original. La integración de la app ejecuta este mismo script y recupera automáticamente las pistas; no hay importador de carpetas CLI. La prueba del archivo del usuario está en `artifacts/audio-luz-de-dia`.
 
-La API `/api/preparation` funciona con Vite dev/preview en loopback, valida origen y token, permite un solo trabajo y cancela su árbol de procesos en Windows. Los trabajos descargados/cancelados se eliminan; el modelo queda en caché. Tras un cierre abrupto pueden quedar temporales en `.local/audio/jobs`. Un alojamiento estático o un teléfono sin este servidor local no ejecuta Python.
+La API `/api/preparation` funciona con Vite dev/preview en loopback, valida origen y token, permite un solo trabajo y cancela su árbol de procesos en Windows. Los trabajos descargados/cancelados se eliminan, reintentando mientras el proceso recién cancelado aún retiene archivos; el modelo queda en caché. Tras un cierre abrupto pueden quedar temporales en `.local/audio/jobs`: al arrancar el servidor se borran los que llevan más de dos horas. Un alojamiento estático o un teléfono sin este servidor local no ejecuta Python.
 
 ## Mejorar el mapa y comprobar afinación · etapa 2D
 
@@ -67,11 +69,31 @@ El análisis sigue la altura cada 20 ms y conserva una curva dentro de cada nota
 
 En el escenario, el afinador muestra la referencia, tu frecuencia y la diferencia en cents: negativa significa más grave, positiva más aguda; 100 cents equivalen a un semitono. Afinador, curva dibujada y puntuación comparten la referencia. Sin tono fiable o sin referencia, el indicador queda neutral. En el resultado se separan **Afinación al cantar** y **Cobertura de notas**, con error medio y tendencia grave/aguda. No detecta palabras.
 
-Los mapas automáticos excluyen hasta 20 ms por extremo de nota para reducir penalizaciones en transiciones, conservando al menos 80 ms evaluables. El resultado indica el tiempo excluido. La compensación de micrófono sigue siendo manual; las pruebas sintéticas no sustituyen cantar con el dispositivo real.
+Los mapas automáticos excluyen hasta 20 ms por extremo de nota para reducir penalizaciones en transiciones, conservando al menos 80 ms evaluables. El resultado indica el tiempo excluido. Las pruebas sintéticas no sustituyen cantar con el dispositivo real.
+
+## Cantar en condiciones reales · revisión 2F
+
+**Exigencia de afinación** (panel «Prepara tu voz», se recuerda entre visitas):
+
+| Exigencia | Crédito completo | Sin crédito desde | Octava | Referencia |
+| --- | --- | --- | --- | --- |
+| Relajada | ±100 cents (un semitono) | 200 cents | cualquiera | la nota escrita o la curva, la más cercana |
+| Normal (por defecto) | ±50 cents | 150 cents | cualquiera | la nota escrita o la curva, la más cercana |
+| Estricta | ±35 cents | 100 cents | exacta | la curva del mapa |
+
+Estricta reproduce la regla anterior (`encore-intonation-2`). En Relajada y Normal cuenta la nota y no su altura absoluta: una voz grave puede cantar una canción aguda una octava abajo, y no hace falta imitar el vibrato del cantante original. El afinador y el punto de voz del escenario siguen la misma regla. Los resultados identifican `encore-intonation-3` y la exigencia usada; solo son comparables entre intentos con la misma exigencia.
+
+**Retraso.** Sin ajuste propio, cada canción usa el retraso que informa el equipo (salida + entrada, de 0 a 300 ms) y el resultado lo indica como automático. Al terminar, la app vuelve a puntuar lo cantado con otros retrasos; si uno explica claramente mejor el intento, propone usarlo con un botón. El valor elegido se guarda por micrófono y «Volver a automático» lo descarta. El control manual sigue disponible. La propuesta parte de que el mapa está bien sincronizado: con un mapa desplazado propondrá compensar ese desplazamiento.
+
+**Nivel del micrófono.** Durante la cuenta atrás se mide el ruido de fondo. Si la entrada es silenciosa, el umbral de silencio baja (hasta 0,0015 de RMS) para que una voz suave o un micrófono con poca ganancia cuenten; nunca sube por encima del valor anterior (0,008). El resultado descargado incluye el umbral usado (`levelGate`) y el ruido medido.
+
+**Altavoces.** Si el micrófono oye los clics de la cuenta atrás, la música está entrando por él. La app lo avisa mientras cantas, mantiene el umbral de silencio normal, no propone retraso y, si el resultado es bajo, lo atribuye a los altavoces en lugar de a tu canto. Sobre una grabación propia los clics suenan más fuertes que antes para que la comprobación sea representativa. No es cancelación de eco: la solución sigue siendo usar auriculares.
+
+Qué se comprobó y qué no: las reglas y los cuatro mecanismos están cubiertos con señal sintética que atraviesa el micrófono, el worklet y la puntuación reales (`tests/karaoke-scoring.test.mjs`, `tests/browser/karaoke-mode.spec.ts`). No se ha medido con voz humana, con altavoces y micrófono físicos ni con auriculares Bluetooth; el retraso que informa cada equipo puede no coincidir con el real, y por eso existe la propuesta posterior.
 
 ## Letras completas y canto libre
 
-La revisión **2E** mejora la explicación de resultados: distingue cobertura parcial de afinación y muestra diagnóstico por frase. La descarga JSON v3 incluye tiempos, señal, tono y errores por frase junto con el texto de retroalimentación y datos básicos de la referencia. El promedio firmado puede compensar desviaciones graves/agudas; no sustituye al error absoluto. Detalles y análisis de una prueba real en `docs/EVALUACION-02E.md`. La fórmula de puntuación continúa en `encore-intonation-2`.
+La revisión **2E** mejora la explicación de resultados: distingue cobertura parcial de afinación y muestra diagnóstico por frase. La descarga JSON (versión 4 desde la revisión 2F) incluye tiempos, señal, tono y errores por frase junto con el texto de retroalimentación, datos básicos de la referencia, la exigencia y lo medido en la captura (`capture`: retraso aplicado, ruido de fondo, altavoces y propuesta). El promedio firmado puede compensar desviaciones graves/agudas; no sustituye al error absoluto. Detalles y análisis de una prueba real en `docs/EVALUACION-02E.md`.
 
 En la ficha de una canción, **Tu letra, de una sola vez** permite buscar por título/artista o pegar un enlace `https://lrclib.net/tracks/…`. La consulta local `/api/lyrics` devuelve opciones ordenadas en la interfaz por cercanía de duración. Se distingue texto plano de LRC con tiempos por línea, se muestra la diferencia con tu archivo y se solicita revisar la versión antes de aplicar LRC. Los tiempos fuera del audio se rechazan; puedes elegir **Usar solo el texto**.
 
@@ -91,7 +113,7 @@ El servicio solo consulta LRCLIB al pulsar buscar: no envía audio. Incluye time
 - Puntuación por precisión de afinación y duración de la señal, rachas y cobertura de voz.
 - Cuenta atrás, reinicio, cancelación y cierre de las pistas de micrófono.
 - Manejo de permisos rechazados, dispositivo ausente/ocupado y desconexión.
-- Compensación **manual** de 0 a 300 ms. No constituye calibración automática.
+- Compensación de retraso de 0 a 300 ms, manual en la etapa 1; desde la revisión 2F parte del valor que informa el equipo y se ajusta con una propuesta tras cada canción.
 - Resultados por frase y vista de las siguientes etapas.
 - Selector de micrófono, monitor previo sin puntuación y diagnóstico de señal, tono y octava. Registros Grave/Original/Agudo para el ejercicio sintetizado.
 
@@ -101,7 +123,8 @@ El servicio solo consulta LRCLIB al pulsar buscar: no envía audio. Incluye time
 - Las barras no prueban por sí mismas que la persona canta: música filtrada por altavoces puede activar el detector. Usar auriculares; la evaluación no es un mecanismo antitrampas.
 - La melodía guía es instrumental, no una voz sintetizada pronunciando la letra.
 - Los enlaces Spotify/YouTube no se descargan. Se importa un archivo local que tengas permiso de utilizar.
-- Los archivos importados se reproducen en su registro original; la transposición del audio queda pendiente. El mapa automático es experimental y puede cubrir solo una parte del canto.
+- Los archivos importados se reproducen en su registro original; la transposición del audio queda pendiente. Con exigencia Normal o Relajada puedes cantarlos en otra octava. El mapa automático es experimental y puede cubrir solo una parte del canto.
+- Con octava libre y tolerancia amplia, un sonido afinado que no sea tu voz (la guía o la canción por los altavoces) también suma. El aviso de altavoces lo detecta en la cuenta atrás, no lo impide.
 - YIN funciona mejor con una única voz. Coros, ruido, vibrato e instrumentos pueden producir errores.
 - La exactitud con señales sintéticas no valida la latencia de todos los micrófonos, navegadores o teléfonos.
 - Salir de la pestaña detiene la práctica para evitar resultados basados en frames omitidos. No hay reanudación todavía.
@@ -127,6 +150,7 @@ Las pruebas de navegador utilizan una entrada sintética y casos de permisos sim
 - `tests/audio-service-check.mjs`: prueba explícita del modelo/API real con el fixture local `artifacts/audio-check/original.wav`. `tests/real-preparation-check.mjs <original> <salida CLI>` verifica resultados existentes en un navegador temporal; no acredita su calidad auditiva.
 - `docs/ETAPAS.md`: alcance y criterios para cada entrega.
 - `tests/intonation.test.mjs`, `tests/melody_analysis_test.py` y `tests/browser/tuner.spec.ts`: referencia continua, señal PCM, vibrato, deslizamientos, silencios, errores conocidos y afinador. `tests/analysis-service-check.mjs` comprueba el nuevo endpoint con inferencia real. El verificador de archivo real admite un tercer argumento con `analysis.json` para comprobar la mejora y persistencia.
+- `tests/karaoke-scoring.test.mjs` y `tests/browser/karaoke-mode.spec.ts`: exigencias y octavas, nota escrita frente a curva, propuesta de retraso, umbral de nivel, detección de altavoces y limpieza de temporales. `tests/browser/library.spec.ts` comprueba además que el escenario sigue los cambios guardados en la biblioteca y que probar el micrófono conserva el resultado.
 - `docs/EVALUACION-01.md`, `docs/EVALUACION-02.md`, `docs/EVALUACION-02B.md`, `docs/EVALUACION-02C.md` y `docs/EVALUACION-02D.md`: evidencia de evaluación y límites de lo comprobado.
 - `docs/CONTINUAR.md`: punto de continuidad ante interrupciones de cuota.
 
@@ -134,7 +158,7 @@ Las pruebas de navegador utilizan una entrada sintética y casos de permisos sim
 
 `App.tsx` controla la sesión y sus estados; `Stage.tsx` dibuja el escenario. `audio.ts` se encarga del contexto, la captura y el reloj. El worklet procesa audio fuera del hilo de React y envía medidas aproximadamente cada 21–24 ms. La interfaz se actualiza aproximadamente a 30 fps.
 
-`scoring.ts` integra cada intervalo de voz sobre la referencia continua del mapa, limita saltos largos y descarta muestras duplicadas. El máximo fijo es 10.000 puntos. Hay crédito completo dentro de 35 cents, disminución lineal hasta 100 cents y cero desde un semitono. Las octavas cuentan como distintas. Los silencios previstos y tramos sin referencia no se puntúan ni penalizan; no cantar durante una nota evaluable sí reduce el resultado. Racha: notas completas con al menos 65% de crédito. La cobertura indica tono fiable detectado, incluso si está desafinado. La afinación se calcula sobre el tiempo cantado; sin tono fiable no se inventa ese porcentaje. Los resultados exportados identifican `encore-intonation-2` y no son directamente comparables con la puntuación anterior.
+`scoring.ts` integra cada intervalo de voz sobre la referencia continua del mapa, limita saltos largos y descarta muestras duplicadas. El máximo fijo es 10.000 puntos. El crédito es completo dentro de la tolerancia de la exigencia elegida y disminuye linealmente hasta cero (tabla en «Cantar en condiciones reales»); solo en Estricta las octavas cuentan como distintas. Los silencios previstos y tramos sin referencia no se puntúan ni penalizan; no cantar durante una nota evaluable sí reduce el resultado. Racha: notas completas con al menos 65% de crédito. La cobertura indica tono fiable detectado, incluso si está desafinado. La afinación se calcula sobre el tiempo cantado; sin tono fiable no se inventa ese porcentaje. Los resultados exportados identifican `encore-intonation-3` y su exigencia; los de `encore-intonation-2` equivalen a la exigencia Estricta.
 
 Separar el tiempo capturado del tiempo de reproducción permite comparar la muestra con su nota de referencia después de compensar el retraso. El cursor de la letra sigue la reproducción; la posición del punto de voz refleja el tiempo evaluado.
 

@@ -145,3 +145,46 @@ test('pending save locks editing, library selection and navigation until persist
   await expect(page.getByText('Cambios guardados en este navegador.')).toBeVisible();
   await expect(page.getByLabel('Título', { exact: true })).toBeEnabled();
 });
+
+test('the stage follows edits saved in the library, leaves a deleted song, and a result survives the microphone test', async ({ page }) => {
+  await page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const context = new AudioContext(); await context.resume();
+      const oscillator = context.createOscillator(), dest = context.createMediaStreamDestination();
+      oscillator.frequency.value = 261.625565; oscillator.connect(dest); oscillator.start();
+      return dest.stream;
+    };
+  });
+  await page.goto('/'); await page.getByRole('button', { name: 'Biblioteca', exact: true }).click();
+  await page.getByLabel('Archivo de audio').setInputFiles(audioFile);
+  await page.getByLabel('Archivo del mapa').setInputFiles(mapFile(map));
+  await page.getByRole('button', { name: 'Guardar y cantar' }).click();
+  await expect(page.locator('.reference-note')).toContainText('Do4');
+  await page.getByRole('button', { name: 'Empezar a cantar' }).click();
+  await expect(page.locator('.result-panel')).toBeVisible({ timeout: 13000 });
+  const score = await page.locator('.score-number').innerText();
+  await page.getByRole('button', { name: 'Probar micrófono', exact: true }).click();
+  await expect(page.locator('.input-diagnostic')).toContainText('Do4');
+  await expect(page.locator('.result-panel')).toBeVisible();
+  await expect(page.locator('.score-number')).toHaveText(score);
+  await page.getByRole('button', { name: 'Detener prueba', exact: true }).click();
+  await expect(page.locator('.result-panel')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Biblioteca', exact: true }).click();
+  await page.locator('.song-row').click();
+  await page.getByLabel('Nota 1', { exact: true }).selectOption({ label: 'Sol4' });
+  await page.getByLabel('Título', { exact: true }).fill('Con otra nota');
+  await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
+  await expect(page.getByText('Cambios guardados en este navegador.')).toBeVisible();
+  await page.getByRole('button', { name: 'Escenario', exact: true }).click();
+  await expect(page.locator('.track-heading h2')).toHaveText('Con otra nota');
+  await expect(page.locator('.reference-note')).toContainText('Sol4');
+
+  await page.getByRole('button', { name: 'Biblioteca', exact: true }).click();
+  await page.locator('.song-row').click();
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Eliminar canción', exact: true }).click();
+  await expect(page.locator('.song-row')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Escenario', exact: true }).click();
+  await expect(page.locator('.track-heading h2')).toHaveText('Un nuevo comienzo');
+});

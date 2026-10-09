@@ -1,12 +1,12 @@
 /** YIN fundamental estimator. AudioWorklet and deterministic tests use this same code. */
-export function detectPitch(samples, sampleRate) {
+export function detectPitch(samples, sampleRate, gate = 0.008) {
   let energy = 0;
   let mean = 0;
   for (const value of samples) mean += value;
   mean /= samples.length;
   for (const value of samples) energy += (value - mean) ** 2;
   const rms = Math.sqrt(energy / samples.length);
-  if (rms < 0.008) return { frequency: null, confidence: 0, rms };
+  if (rms < gate) return { frequency: null, confidence: 0, rms };
   const half = Math.floor(samples.length / 2);
   const maxLag = Math.min(half - 1, Math.ceil(sampleRate / 65));
   const minLag = Math.max(2, Math.floor(sampleRate / 1000));

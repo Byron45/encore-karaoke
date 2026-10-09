@@ -1,5 +1,5 @@
 export interface InputReading { time: number; span: number; frequency: number | null; rms: number; confidence: number }
-export interface ActiveMicrophone { deviceId: string; label: string }
+export interface ActiveMicrophone { deviceId: string; label: string; latency?: number }
 
 export function microphoneError(error: unknown): string {
   const name = error instanceof Error ? error.name : '';
@@ -40,7 +40,8 @@ export class MicrophoneInput {
     this.source.connect(this.processor).connect(this.mute).connect(this.context.destination);
     this.processor.onprocessorerror = () => { if (!this.disposed) onError('El análisis de audio se interrumpió. Prueba de nuevo el micrófono.'); };
     this.processor.port.onmessage = ({ data }: MessageEvent<InputReading>) => { if (!this.disposed) onReading(data); };
-    onDevice({ deviceId: actualId || deviceId, label: track.label || 'Entrada predeterminada del sistema' });
+    const latency = (track.getSettings() as MediaTrackSettings & { latency?: number }).latency;
+    onDevice({ deviceId: actualId || deviceId, label: track.label || 'Entrada predeterminada del sistema', ...(Number.isFinite(latency) ? { latency } : {}) });
     return true;
   }
 
