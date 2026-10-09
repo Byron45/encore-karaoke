@@ -1,177 +1,165 @@
 # Encore · Karaoke personal
 
-Aplicación web local en React + TypeScript. Nombre provisional. Etapa 2: **biblioteca de audio propia, editor de letras y notas, y metadatos MusicBrainz**, sobre el escenario de afinación de la primera entrega.
+Karaoke para practicar con tu propia música. Encore escucha tu voz por el micrófono, detecta la nota que cantas en tiempo real y la compara con la melodía de la canción. Todo ocurre en tu computadora: tu voz no se graba ni se envía a ningún servidor.
 
-Ampliaciones implementadas: **LRCLIB y letras completas/LRC**, separación vocal local y mapa automático. La etapa **2D** añade análisis CREPE + pYIN, curvas de afinación, mejora del mapa reutilizando la voz aislada y un afinador conectado a la evaluación. Evidencia y límites en `docs/EVALUACION-02D.md`.
+![El escenario de Encore durante una canción: barras de notas, punto de voz, afinador y letra](docs/img/escenario.png)
 
-La revisión **2F** adapta la evaluación a cantar en condiciones reales: tres niveles de exigencia con octava libre, compensación de retraso automática con propuesta de ajuste, nivel de micrófono adaptable y aviso cuando la música entra por el micrófono. Ver «Cantar en condiciones reales».
+> **Estado:** en desarrollo (revisión 2F). El recorrido completo funciona y está cubierto por pruebas automáticas con voz sintética. Todavía falta validarlo con voces reales y distintos micrófonos; consulta [Limitaciones](#limitaciones-conocidas).
 
-## Ejecutar
+## Características
 
-Requisitos: Node.js 22.18 o superior y npm.
+- **Escenario de canto** con barras de notas, letra sincronizada, afinador en vivo (en cents) y puntuación sobre 10.000.
+- **Tres niveles de exigencia.** En Relajada y Normal cuenta la nota y no su altura: puedes cantar en la octava que te resulte cómoda.
+- **Biblioteca propia.** Importa MP3, WAV, OGG, M4A, FLAC o WebM (hasta 30 MB y 10 minutos) y guárdalos en el navegador.
+- **Editor de letra y notas.** Marca tiempos mientras escuchas, desplaza el mapa completo e importa o exporta mapas en JSON.
+- **Letras con tiempos** desde [LRCLIB](https://lrclib.net) y metadatos de la grabación desde [MusicBrainz](https://musicbrainz.org).
+- **Preparación automática opcional.** Separa la voz del acompañamiento y propone un mapa de notas a partir de la voz aislada, sin salir de tu equipo.
+- **Tres acompañamientos** tras separar: voz original, voz al 25 % o solo instrumental.
+- **Ajustes que se adaptan a tu equipo.** Compensa el retraso de audio, ajusta la sensibilidad al nivel de tu micrófono y avisa si la música está entrando por él.
+- **Resultados explicados** por frase, con descarga en JSON.
 
-```powershell
+![Editor de la biblioteca: letra completa y mapa de notas de una canción](docs/img/mapa-de-notas.png)
+
+## Requisitos
+
+| Para | Necesitas |
+| --- | --- |
+| Usar la aplicación | [Node.js](https://nodejs.org) 22.18 o superior y un navegador basado en Chromium (Edge, Chrome u Opera) |
+| Cantar con puntuación fiable | Auriculares, para que la música no entre por el micrófono |
+| Preparación automática (opcional) | [uv](https://docs.astral.sh/uv/), unos 1,3 GB de disco y varios minutos de CPU por canción |
+| Pruebas de navegador (opcional) | Microsoft Edge |
+
+Desarrollado y probado en Windows 11. No se ha verificado en macOS ni Linux.
+
+## Inicio rápido
+
+```bash
+git clone https://github.com/Byron45/encore-karaoke.git
+cd encore-karaoke
 npm install
 npm run dev
 ```
 
-Abre http://127.0.0.1:5173. El servidor escucha únicamente en este equipo. El micrófono necesita localhost o HTTPS. El navegador integrado puede gestionar permisos de forma distinta; si no ofrece acceso al micrófono, abre la misma dirección en Edge o Chrome.
+Abre <http://127.0.0.1:5173>. El micrófono solo funciona en `localhost`, `127.0.0.1` o HTTPS.
 
-1. Usa **Ver demo** para escuchar y observar el recorrido con voz simulada.
-2. Conecta auriculares, elige la entrada y usa **Probar micrófono**. Comprueba el nombre del dispositivo, nivel y nota; después usa **Empezar a cantar**.
-3. Sigue las barras y las palabras; puedes cantar las sílabas libremente: todavía no evaluamos el contenido de la letra.
-4. Al terminar, revisa cada frase o descarga el resultado JSON. La demo se identifica como simulada también en el archivo.
+## Cómo se usa
 
-El audio de entrada se procesa en un AudioWorklet del dispositivo. No se graba ni se sube. Las fuentes tipográficas se cargan desde Google Fonts con alternativas locales si no hay conexión. No hay cuentas, analítica ni almacenamiento de grabaciones. Las puntuaciones viven en memoria hasta la descarga voluntaria.
+### 1. Prueba el escenario
 
-## Probar la biblioteca
+Pulsa **Ver demo** para ver el recorrido con una voz simulada. Después conecta los auriculares, elige tu entrada, pulsa **Probar micrófono** y luego **Empezar a cantar**. El ejercicio incluido dura 32 segundos.
 
-1. Abre **Biblioteca → Añadir ejemplo editable**. Incluye audio original y 24 notas listas. Pulsa **Guardar y cantar** para probar el recorrido completo.
-2. Para usar tu archivo, pulsa **Cargar audio**. Admite MP3, WAV, OGG, M4A, FLAC o WebM compatibles con el navegador, de 1 segundo a 10 minutos y hasta 30 MB.
-3. Escucha la pista y prepara filas con palabra/sílaba, frase, inicio, duración y nota. **Marcar** toma la posición actual del reproductor; **Aplicar desfase** desplaza todo el mapa.
-4. Opcionalmente busca el título y artista en **Identificar en MusicBrainz**. Revisa edición y duración antes de asociar. Esto no obtiene audio, letra ni notas.
-5. Guarda el borrador o, con el mapa válido, pulsa **Guardar y cantar**. Puedes exportar audio y mapa para conservar una copia.
+### 2. Canta tu música
 
-La biblioteca se guarda en IndexedDB del mismo navegador y origen. Abrir `localhost` en lugar de `127.0.0.1`, cambiar de puerto o navegador crea otro espacio. Borrar los datos del sitio elimina la biblioteca; no hay copia en la nube. Al guardar se solicita al navegador almacenamiento persistente; puede concederlo o no sin avisar. La elección de micrófono, la exigencia de afinación y la compensación de cada micrófono se recuerdan en localStorage.
+1. En **Biblioteca**, pulsa **Cargar audio** y elige un archivo que tengas permiso de usar.
+2. Añade la letra: búscala en LRCLIB por título y artista, o pégala completa.
+3. Prepara las notas, a mano en el editor o con **Separar voz y generar mapa**.
+4. Pulsa **Guardar y cantar**.
 
-El mapa puede editarse manualmente o generarse como **borrador automático experimental**. Cada mapa JSON Encore versión 1 (manual), 2 (automático) o 3 (con curvas de afinación) se vincula al contenido exacto del audio mediante SHA-256 y a su duración. Se conservan los mapas anteriores. Un mapa de otro archivo se rechaza, aunque tenga el mismo título. Se admiten 2.000 notas, 40.000 puntos de curvas en total y 12 MB de JSON. Cambiar los metadatos MusicBrainz no altera la pista ni demuestra que sus notas sean correctas.
+Con letra y sin notas también puedes cantar: la app reproduce tu audio y avanza la letra, sin puntuación.
 
-## Separación y mapa automático · etapa 2C
+### 3. Ajusta la evaluación
 
-En esta computadora el motor ya está instalado y probado. Para otra instalación, instala [uv](https://docs.astral.sh/uv/) y ejecuta `npm run audio:setup`. Crea `.venv-audio` con Python 3.11 y dependencias fijadas en `scripts/audio/requirements-lock.txt`. Se usa CPU; no requiere configurar CUDA. El primer procesamiento descarga el modelo `UVR-MDX-NET-Inst_HQ_3.onnx` (~67 MB). Después queda en `.local/audio/models`.
+En el panel **Prepara tu voz**:
 
-1. En **Biblioteca**, abre la canción y pulsa **Separar voz y generar mapa**. El original se envía únicamente al servidor de esta computadora.
-2. Espera el progreso o cancela. Escucha las tres vistas previas: instrumental, voz reducida y voz aislada. El original y el mapa guardado se conservan mientras revisas el resultado.
-3. Elige **Usar solo las pistas**, o revisa el mapa, marca la casilla y pulsa **Usar pistas y mapa automático**. El mapa anterior solo se reemplaza tras confirmarlo. Acepta o descarta el borrador antes de guardar.
-4. Pulsa **Guardar y cantar**. En **Acompañamiento** elige Fácil (original), Intermedio (instrumental + voz al 25 %) o Difícil (instrumental). Cambiar a las variantes separadas desactiva la melodía guía; puedes activarla expresamente. Las tres usan las mismas notas de referencia.
+- **Exigencia de afinación** decide cuánto margen tienes (tabla siguiente).
+- **Compensar retraso** empieza en automático. Al terminar una canción, si tu voz encaja mejor con otro valor, aparece un botón para usarlo; se recuerda para ese micrófono.
 
-[Audio Separator](https://github.com/nomadkaraoke/python-audio-separator) genera los stems. Desde la etapa 2D, [torchcrepe](https://github.com/maxrmorrison/torchcrepe) analiza la voz aislada y se contrasta con pYIN de librosa para descartar discrepancias claras. Se conservan segmentos con confianza y energía suficientes; silencios y segmentos descartados no puntúan. No se inventan notas a partir del BPM ni palabras por nota. Con LRC se agrupan notas por línea; texto plano sigue sin tiempos. No hay alineación ni reconocimiento palabra por palabra.
+## Cómo se puntúa
 
-**El mapa puede ser parcial y equivocarse de octava o confundir coros.** En la prueba de Luz de Día, el mapa pasó de 129 notas / 32,28 s a 493 notas / 125,86 s sobre 267,82 s de audio. Esto mide cobertura propuesta, no precisión musical ni porcentaje de voz correctamente transcrita. La separación también puede dejar residuos vocales. Escucha y revisa antes de evaluar tu interpretación.
-
-Los tres WAV estéreo PCM16/44.1 kHz se validan por SHA-256, muestras, duración y alineación con el original. Pueden superar 30 MB: el límite de entrada aplica al original; cada stem admite hasta 128 MB. Se comprueba cuota y se guarda la ficha completa en una transacción de IndexedDB. El MP3 de ejemplo produjo ~135 MiB de pistas adicionales. Solo se decodifica el acompañamiento elegido al cantar.
-
-Script independiente (elige una carpeta de salida nueva):
-
-```powershell
-.venv-audio/Scripts/python.exe scripts/audio/prepare.py --input 'C:\ruta\cancion.mp3' --output 'artifacts/audio-mi-cancion' --cache '.local/audio/models'
-```
-
-Produce `vocals.wav`, `instrumental.wav`, `reduced.wav` y `manifest.json`. El script conserva el archivo original. La integración de la app ejecuta este mismo script y recupera automáticamente las pistas; no hay importador de carpetas CLI. La prueba del archivo del usuario está en `artifacts/audio-luz-de-dia`.
-
-La API `/api/preparation` funciona con Vite dev/preview en loopback, valida origen y token, permite un solo trabajo y cancela su árbol de procesos en Windows. Los trabajos descargados/cancelados se eliminan, reintentando mientras el proceso recién cancelado aún retiene archivos; el modelo queda en caché. Tras un cierre abrupto pueden quedar temporales en `.local/audio/jobs`: al arrancar el servidor se borran los que llevan más de dos horas. Un alojamiento estático o un teléfono sin este servidor local no ejecuta Python.
-
-## Mejorar el mapa y comprobar afinación · etapa 2D
-
-Para canciones ya separadas: **Biblioteca → canción → Mejorar mapa desde la voz**. Reutiliza el WAV vocal guardado; no vuelve a separar ni modifica las tres pistas. Compara el borrador con el anterior, escucha la voz aislada, acepta el mapa y pulsa **Guardar cambios** o **Guardar y cantar**. Cancelar o descartar conserva el mapa anterior. Las nuevas preparaciones usan directamente este motor.
-
-El análisis sigue la altura cada 20 ms y conserva una curva dentro de cada nota para representar vibrato y deslizamientos. Procesa por CPU y puede tardar varios minutos. `torchcrepe==0.0.24` y sus pesos se instalan con `npm run audio:setup`; no se sube audio a un servicio externo.
-
-En el escenario, el afinador muestra la referencia, tu frecuencia y la diferencia en cents: negativa significa más grave, positiva más aguda; 100 cents equivalen a un semitono. Afinador, curva dibujada y puntuación comparten la referencia. Sin tono fiable o sin referencia, el indicador queda neutral. En el resultado se separan **Afinación al cantar** y **Cobertura de notas**, con error medio y tendencia grave/aguda. No detecta palabras.
-
-Los mapas automáticos excluyen hasta 20 ms por extremo de nota para reducir penalizaciones en transiciones, conservando al menos 80 ms evaluables. El resultado indica el tiempo excluido. Las pruebas sintéticas no sustituyen cantar con el dispositivo real.
-
-## Cantar en condiciones reales · revisión 2F
-
-**Exigencia de afinación** (panel «Prepara tu voz», se recuerda entre visitas):
+La puntuación mide cuánto tiempo sostienes la nota correcta. No reconoce palabras ni valora la interpretación.
 
 | Exigencia | Crédito completo | Sin crédito desde | Octava | Referencia |
 | --- | --- | --- | --- | --- |
-| Relajada | ±100 cents (un semitono) | 200 cents | cualquiera | la nota escrita o la curva, la más cercana |
-| Normal (por defecto) | ±50 cents | 150 cents | cualquiera | la nota escrita o la curva, la más cercana |
-| Estricta | ±35 cents | 100 cents | exacta | la curva del mapa |
+| Relajada | ±100 cents (un semitono) | 200 cents | cualquiera | la nota escrita o la curva original, la más cercana |
+| Normal (por defecto) | ±50 cents | 150 cents | cualquiera | la nota escrita o la curva original, la más cercana |
+| Estricta | ±35 cents | 100 cents | exacta | la curva original |
 
-Estricta reproduce la regla anterior (`encore-intonation-2`). En Relajada y Normal cuenta la nota y no su altura absoluta: una voz grave puede cantar una canción aguda una octava abajo, y no hace falta imitar el vibrato del cantante original. El afinador y el punto de voz del escenario siguen la misma regla. Los resultados identifican `encore-intonation-3` y la exigencia usada; solo son comparables entre intentos con la misma exigencia.
+Los silencios previstos no suman ni restan; no cantar durante una nota sí reduce el resultado. Los resultados solo son comparables entre intentos con la misma exigencia.
 
-**Retraso.** Sin ajuste propio, cada canción usa el retraso que informa el equipo (salida + entrada, de 0 a 300 ms) y el resultado lo indica como automático. Al terminar, la app vuelve a puntuar lo cantado con otros retrasos; si uno explica claramente mejor el intento, propone usarlo con un botón. El valor elegido se guarda por micrófono y «Volver a automático» lo descarta. El control manual sigue disponible. La propuesta parte de que el mapa está bien sincronizado: con un mapa desplazado propondrá compensar ese desplazamiento.
+## Preparación automática
 
-**Nivel del micrófono.** Durante la cuenta atrás se mide el ruido de fondo. Si la entrada es silenciosa, el umbral de silencio baja (hasta 0,0015 de RMS) para que una voz suave o un micrófono con poca ganancia cuenten; nunca sube por encima del valor anterior (0,008). El resultado descargado incluye el umbral usado (`levelGate`) y el ruido medido.
+Es opcional y se instala aparte, porque descarga dependencias pesadas de Python:
 
-**Altavoces.** Si el micrófono oye los clics de la cuenta atrás, la música está entrando por él. La app lo avisa mientras cantas, mantiene el umbral de silencio normal, no propone retraso y, si el resultado es bajo, lo atribuye a los altavoces en lugar de a tu canto. Sobre una grabación propia los clics suenan más fuertes que antes para que la comprobación sea representativa. No es cancelación de eco: la solución sigue siendo usar auriculares.
-
-Qué se comprobó y qué no: las reglas y los cuatro mecanismos están cubiertos con señal sintética que atraviesa el micrófono, el worklet y la puntuación reales (`tests/karaoke-scoring.test.mjs`, `tests/browser/karaoke-mode.spec.ts`). No se ha medido con voz humana, con altavoces y micrófono físicos ni con auriculares Bluetooth; el retraso que informa cada equipo puede no coincidir con el real, y por eso existe la propuesta posterior.
-
-## Letras completas y canto libre
-
-La revisión **2E** mejora la explicación de resultados: distingue cobertura parcial de afinación y muestra diagnóstico por frase. La descarga JSON (versión 4 desde la revisión 2F) incluye tiempos, señal, tono y errores por frase junto con el texto de retroalimentación, datos básicos de la referencia, la exigencia y lo medido en la captura (`capture`: retraso aplicado, ruido de fondo, altavoces y propuesta). El promedio firmado puede compensar desviaciones graves/agudas; no sustituye al error absoluto. Detalles y análisis de una prueba real en `docs/EVALUACION-02E.md`.
-
-En la ficha de una canción, **Tu letra, de una sola vez** permite buscar por título/artista o pegar un enlace `https://lrclib.net/tracks/…`. La consulta local `/api/lyrics` devuelve opciones ordenadas en la interfaz por cercanía de duración. Se distingue texto plano de LRC con tiempos por línea, se muestra la diferencia con tu archivo y se solicita revisar la versión antes de aplicar LRC. Los tiempos fuera del audio se rechazan; puedes elegir **Usar solo el texto**.
-
-También puedes pegar toda la letra en el cuadro y elegir su formato. No se crean notas ni se reemplaza el mapa musical al editar texto. Las letras se guardan en la misma ficha IndexedDB. **Ajustar letra (s)** desplaza solo la letra: positivo la retrasa, negativo la adelanta. La descarga de LRC incorpora el ajuste efectivo para poder reutilizarlo.
-
-Con letra y sin notas, aparece **Guardar y cantar sin puntuación**. Se reproduce tu audio original, la letra LRC avanza por líneas y la letra plana queda en un panel desplazable manualmente. **Escuchar canción** reproduce sin pedir micrófono; **Empezar a cantar** usa la entrada seleccionada. La sesión libre muestra «Sin puntuación» y exporta `scored:false, score:null`, sin porcentajes de afinación ficticios. Si existe un mapa válido, la puntuación anterior se mantiene; los resultados por frase corresponden al mapa, no a la letra independiente.
-
-LRCLIB no aporta alturas musicales. Un LRC normal no aporta tiempos por palabra. La sincronización de otra edición puede ser incorrecta aunque sus duraciones se parezcan. Para el enlace del usuario `34541541`, el servicio indicó 289 s y 47 marcas de tiempo; su captura mostraba audio de aproximadamente 267 s. Verificar edición y tiempos antes de usarlo.
-
-El servicio solo consulta LRCLIB al pulsar buscar: no envía audio. Incluye timeout de 10 s, cola por proceso, deduplicación, caché temporal y errores recuperables. Funciona con Vite dev y preview, igual que MusicBrainz.
-
-## Qué incluye la etapa 1
-
-- Melodía y letra originales compuestas para el prototipo (`src/song.ts`). Acompañamiento sintetizado con Web Audio, sin canciones descargadas.
-- Reloj de audio compartido por reproducción, letras y mapa de notas.
-- Estimación de frecuencia fundamental mediante YIN en un AudioWorklet.
-- Puntuación por precisión de afinación y duración de la señal, rachas y cobertura de voz.
-- Cuenta atrás, reinicio, cancelación y cierre de las pistas de micrófono.
-- Manejo de permisos rechazados, dispositivo ausente/ocupado y desconexión.
-- Compensación de retraso de 0 a 300 ms, manual en la etapa 1; desde la revisión 2F parte del valor que informa el equipo y se ajusta con una propuesta tras cada canción.
-- Resultados por frase y vista de las siguientes etapas.
-- Selector de micrófono, monitor previo sin puntuación y diagnóstico de señal, tono y octava. Registros Grave/Original/Agudo para el ejercicio sintetizado.
-
-## Límites que deben mantenerse visibles
-
-- No identifica ni califica palabras, pronunciación, timbre o calidad artística.
-- Las barras no prueban por sí mismas que la persona canta: música filtrada por altavoces puede activar el detector. Usar auriculares; la evaluación no es un mecanismo antitrampas.
-- La melodía guía es instrumental, no una voz sintetizada pronunciando la letra.
-- Los enlaces Spotify/YouTube no se descargan. Se importa un archivo local que tengas permiso de utilizar.
-- Los archivos importados se reproducen en su registro original; la transposición del audio queda pendiente. Con exigencia Normal o Relajada puedes cantarlos en otra octava. El mapa automático es experimental y puede cubrir solo una parte del canto.
-- Con octava libre y tolerancia amplia, un sonido afinado que no sea tu voz (la guía o la canción por los altavoces) también suma. El aviso de altavoces lo detecta en la cuenta atrás, no lo impide.
-- YIN funciona mejor con una única voz. Coros, ruido, vibrato e instrumentos pueden producir errores.
-- La exactitud con señales sintéticas no valida la latencia de todos los micrófonos, navegadores o teléfonos.
-- Salir de la pestaña detiene la práctica para evitar resultados basados en frames omitidos. No hay reanudación todavía.
-- No se comparte ni persiste la puntuación; aún no existen rankings, PWA offline ni instaladores de escritorio.
-
-## Evaluación reproducible
-
-```powershell
-npm test
-npm run build
-# Con npm run dev activo en otra terminal y Microsoft Edge instalado:
-npm run test:browser
+```bash
+npm run audio:setup
 ```
 
-Las pruebas de navegador utilizan una entrada sintética y casos de permisos simulados. No escuchan el micrófono físico del usuario. Para otros entornos se puede cambiar `channel` en `playwright.config.ts` por un navegador Playwright instalado.
+Crea un entorno aislado en `.venv-audio` con Python 3.11 y dependencias fijadas. El primer uso descarga el modelo de separación (unos 67 MB). Todo el procesamiento se hace por CPU en tu equipo.
 
-- `tests/audio.test.mjs`: detector, silencio, ruido, armónicos, octavas, cobertura y puntuación independiente de la tasa de frames.
-- `tests/browser/karaoke.spec.ts`: demo completa, exportación, controles, permisos, procesador real con flujo sintético, cancelación y vista móvil.
-- `tests/browser/microphones.spec.ts`: selección exacta, monitor, persistencia, desconexión y canto completo por la captura real con señal sintética.
-- `tests/library.test.mjs` y `tests/browser/library.spec.ts`: validación, importación, edición, persistencia, errores, MusicBrainz y canto de audio importado.
-- `tests/lyrics.test.mjs` y `tests/browser/lyrics.spec.ts`: texto/LRC, consultas LRCLIB, desfases, persistencia, versión diferente, errores y canto libre sin puntuación.
-- `tests/preparation.test.mjs`, `tests/audio_analysis_test.py` y `tests/browser/preparation.spec.ts`: manifiestos/WAV, notas conocidas, alineación, cancelación del árbol de procesos, aceptación, guardado y reproducción de tres variantes. Python: `.venv-audio/Scripts/python.exe tests/audio_analysis_test.py`.
-- `tests/audio-service-check.mjs`: prueba explícita del modelo/API real con el fixture local `artifacts/audio-check/original.wav`. `tests/real-preparation-check.mjs <original> <salida CLI>` verifica resultados existentes en un navegador temporal; no acredita su calidad auditiva.
-- `docs/ETAPAS.md`: alcance y criterios para cada entrega.
-- `tests/intonation.test.mjs`, `tests/melody_analysis_test.py` y `tests/browser/tuner.spec.ts`: referencia continua, señal PCM, vibrato, deslizamientos, silencios, errores conocidos y afinador. `tests/analysis-service-check.mjs` comprueba el nuevo endpoint con inferencia real. El verificador de archivo real admite un tercer argumento con `analysis.json` para comprobar la mejora y persistencia.
-- `tests/karaoke-scoring.test.mjs` y `tests/browser/karaoke-mode.spec.ts`: exigencias y octavas, nota escrita frente a curva, propuesta de retraso, umbral de nivel, detección de altavoces y limpieza de temporales. `tests/browser/library.spec.ts` comprueba además que el escenario sigue los cambios guardados en la biblioteca y que probar el micrófono conserva el resultado.
-- `docs/EVALUACION-01.md`, `docs/EVALUACION-02.md`, `docs/EVALUACION-02B.md`, `docs/EVALUACION-02C.md` y `docs/EVALUACION-02D.md`: evidencia de evaluación y límites de lo comprobado.
-- `docs/CONTINUAR.md`: punto de continuidad ante interrupciones de cuota.
+El mapa generado es **experimental**: puede cubrir solo parte de la canción, equivocarse de octava o confundir coros con la voz principal. Escucha la voz aislada y revisa las notas antes de fiarte de la puntuación.
 
-## Arquitectura
+## Privacidad
 
-`App.tsx` controla la sesión y sus estados; `Stage.tsx` dibuja el escenario. `audio.ts` se encarga del contexto, la captura y el reloj. El worklet procesa audio fuera del hilo de React y envía medidas aproximadamente cada 21–24 ms. La interfaz se actualiza aproximadamente a 30 fps.
+- La voz se analiza en el navegador con un AudioWorklet. No se graba ni se sube.
+- La biblioteca vive en IndexedDB, en tu navegador. No hay cuentas ni copia en la nube: borrar los datos del sitio borra la biblioteca.
+- El servidor local escucha solo en `127.0.0.1`. La preparación de audio comprueba además el origen de cada petición y un token de sesión.
+- Conexiones externas, todas iniciadas por una acción tuya salvo la primera:
+  - Google Fonts, al cargar la página (hay tipografías locales de respaldo).
+  - MusicBrainz y LRCLIB, al pulsar buscar; se envían solo título y artista.
+  - La descarga del modelo, la primera vez que separas una canción.
 
-`scoring.ts` integra cada intervalo de voz sobre la referencia continua del mapa, limita saltos largos y descarta muestras duplicadas. El máximo fijo es 10.000 puntos. El crédito es completo dentro de la tolerancia de la exigencia elegida y disminuye linealmente hasta cero (tabla en «Cantar en condiciones reales»); solo en Estricta las octavas cuentan como distintas. Los silencios previstos y tramos sin referencia no se puntúan ni penalizan; no cantar durante una nota evaluable sí reduce el resultado. Racha: notas completas con al menos 65% de crédito. La cobertura indica tono fiable detectado, incluso si está desafinado. La afinación se calcula sobre el tiempo cantado; sin tono fiable no se inventa ese porcentaje. Los resultados exportados identifican `encore-intonation-3` y su exigencia; los de `encore-intonation-2` equivalen a la exigencia Estricta.
+## Pruebas
 
-Separar el tiempo capturado del tiempo de reproducción permite comparar la muestra con su nota de referencia después de compensar el retraso. El cursor de la letra sigue la reproducción; la posición del punto de voz refleja el tiempo evaluado.
+```bash
+npm test             # 53 pruebas unitarias: detector, puntuación, mapas, letras, servicios
+npm run build        # comprobación de tipos y compilación
+npm run test:browser # 39 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
+```
 
-## MusicBrainz: decisión de integración
+Las pruebas de navegador hacen pasar una voz sintética por el micrófono, el detector y la puntuación reales. No sustituyen una prueba con voz humana.
 
-Integrado como fuente de **metadatos**: título, artista, grabación, lanzamiento, duración y MBID. Es útil para distinguir versiones; no reemplaza el archivo de audio, los permisos de uso, la letra sincronizada ni el mapa vocal.
+## Estructura del proyecto
 
-El servicio local `server/musicbrainz.mjs`, conectado a Vite, expone `/api/musicbrainz/recordings`. Envía solo título y artista al buscar explícitamente; utiliza identificación de cliente, cola global por proceso con separación de 1,1 segundos, caché de 15 minutos, deduplicación, timeout de 8 segundos y mensajes de error. No necesita clave para esta consulta pública. La búsqueda por mood tendrá su propio índice y evaluación posterior.
+```
+src/            Interfaz en React y motor de canto
+  audio.ts        Reloj de la canción, captura y calibración
+  scoring.ts      Puntuación y diagnóstico
+  capture.ts      Ruido de fondo, nivel y detección de altavoces
+  Stage.tsx       Escenario, afinador y letra
+  Library.tsx     Biblioteca y editor
+public/audio/   Detector de tono (YIN) que corre en el AudioWorklet
+server/         Servicios locales como complementos de Vite: MusicBrainz, LRCLIB y preparación
+scripts/audio/  Motor de Python: separación de voz y análisis de melodía
+tests/          Pruebas unitarias; tests/browser contiene las de extremo a extremo
+docs/           Notas técnicas, plan por etapas y evaluaciones
+```
 
-El servicio funciona con `npm run dev` y `npm run preview`. Copiar únicamente `dist/` a un alojamiento estático no proporciona esta API. Si el proyecto se publica o escala, habrá que preparar un servidor de catálogo y revisar la identificación/contacto, condiciones del servicio y limitación compartida entre procesos.
+## Limitaciones conocidas
 
-Fuentes consultadas el 14 de septiembre de 2026:
-- https://musicbrainz.org/doc/MusicBrainz_API
-- https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet
-- https://developer.spotify.com/policy
-- https://developers.google.com/youtube/terms/developer-policies-guide
+- **Hacen falta auriculares.** Sin ellos la música se mezcla con tu voz y la puntuación deja de ser fiable. La app lo detecta y avisa, pero no lo corrige.
+- **Sin validar con voz real.** La evaluación está comprobada con señal sintética; faltan pruebas con personas, micrófonos distintos y auriculares Bluetooth.
+- **El retraso automático es una estimación.** Parte de lo que informa el equipo, que puede no coincidir con el real; por eso existe la propuesta al terminar cada canción.
+- **El mapa automático es experimental** y suele quedar fragmentado en notas muy cortas.
+- **El audio importado no se transpone.** Se reproduce en su tono original.
+- **Los servicios locales dependen de Vite** (`npm run dev` o `npm run preview`). Copiar solo `dist/` a un alojamiento estático no incluye las búsquedas ni la preparación.
+- **No hay historial de puntuaciones**, pausa ni cola de canciones.
+
+## Próximos pasos propuestos
+
+- [ ] Validar con voz real, auriculares y varios micrófonos.
+- [ ] Mejorar el mapa automático: unir notas fragmentadas y obtener tiempos por sílaba.
+- [ ] Importar mapas hechos a mano.
+- [ ] Récords locales, pausa y cola de canciones.
+- [ ] Copia de seguridad de la biblioteca y guardado que no reescriba el audio en cada cambio.
+- [ ] Formateador, linter e integración continua.
+
+El plan original por etapas está en [docs/ETAPAS.md](docs/ETAPAS.md).
+
+## Documentación
+
+- [Notas técnicas por etapa](docs/NOTAS-TECNICAS.md): decisiones, límites y detalle de cada entrega.
+- [Preparación automática](docs/PREPARACION-AUTOMATICA.md): diseño de la separación y del mapa.
+- [Punto de continuación](docs/CONTINUAR.md): estado actual y siguiente paso.
+- Evaluaciones de cada etapa en `docs/EVALUACION-*.md`.
+
+## Tecnología y créditos
+
+React 19, TypeScript y Vite. Web Audio API para la captura y el análisis. Playwright para las pruebas de navegador.
+
+El motor opcional usa [python-audio-separator](https://github.com/nomadkaraoke/python-audio-separator) con un modelo UVR-MDX-NET, [torchcrepe](https://github.com/maxrmorrison/torchcrepe) y [librosa](https://librosa.org). Los iconos son de [Lucide](https://lucide.dev). Los metadatos proceden de MusicBrainz y las letras de LRCLIB; cada servicio tiene sus propias condiciones de uso.
+
+Encore no incluye ni descarga canciones. Usa solo audio y letras que tengas derecho a utilizar.
+
+## Licencia
+
+Proyecto personal en desarrollo, todavía sin licencia de código abierto.
