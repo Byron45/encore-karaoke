@@ -1,6 +1,16 @@
-# Punto de continuación · revisión 2F terminada
+# Punto de continuación · revisión 2G terminada
 
-## Última revisión: auditoría y evaluación para cantar en condiciones reales
+## Última revisión: calibración con voz real
+
+9 de octubre de 2026. El usuario cantó «Luz de Día» con auriculares HyperX Cloud Stinger (entrada «Micrófono (Realtek(R) Audio)»), exigencia Normal, voz al 25 %, retraso automático de 60 ms: 4.001 puntos, cobertura 73 %, afinación 55 %, error 121 cents. La captura funcionó: señal 100 %, sin altavoces, ruido de fondo 0,0022.
+
+La voz original aislada, puntuada contra su propio mapa, solo alcanzaba 7.319 puntos: el detector descartaba parte de una voz real. Revisión 2G: umbral de YIN 0,15 → 0,25, margen de tiempo de ±120 ms (Normal) y ±160 ms (Relajada), lecturas del intento conservadas en el resultado (`capture.trace` en la descarga) y botón «Ver trazo» por frase. La voz original pasa a 8.432 puntos. Medidas y decisiones en `docs/NOTAS-TECNICAS.md`, sección «Calibración con voz real».
+
+El repositorio está en https://github.com/Byron45/encore-karaoke (privado). El usuario pidió seguir subiendo ahí los cambios.
+
+Siguiente paso: repetir la misma canción y enviar el JSON descargado. Con el trazo se puede volver a puntuar el intento con otros ajustes y ver, frase por frase, si la desviación hacia grave es de la voz o del mapa. Pendiente de esa evidencia: limpiar el mapa (notas aisladas antes de que entre la voz, tramos de coro) y decidir si hace falta monitor de la propia voz en los auriculares.
+
+## Revisión 2F: auditoría y evaluación para cantar en condiciones reales
 
 9 de octubre de 2026. Una auditoría independiente confirmó que el motor es correcto en laboratorio y que el resultado real de 1.019 puntos no medía el canto: octava exacta, tolerancia de afinador, retraso sin medir, umbral de nivel fijo y música entrando por el micrófono. El proyecto pasó a ser un repositorio git; el commit `275aa80` conserva el estado anterior a estos cambios.
 

@@ -21,7 +21,8 @@ export function detectPitch(samples, sampleRate, gate = 0.008) {
   }
   let lag = minLag;
   for (; lag < maxLag; lag++) {
-    if (difference[lag] < 0.15) {
+    // 0.25 keeps the breathy and changing parts of a real voice; measured on an isolated vocal it adds a tenth of the sung time and no pitch on noise.
+    if (difference[lag] < 0.25) {
       while (lag + 1 < maxLag && difference[lag + 1] < difference[lag]) lag++;
       break;
     }

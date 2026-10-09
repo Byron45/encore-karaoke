@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ScoreTracker, DIFFICULTIES, estimateOffset, performanceFeedback, pitchQuality } from '../src/scoring.ts';
+import { ScoreTracker, DIFFICULTIES, encodeTrace, estimateOffset, performanceFeedback, pitchQuality } from '../src/scoring.ts';
+import { resultDocument } from '../src/result.ts';
 import { hearsCountIn, levelGate, noiseFloor, reportedLatency } from '../src/capture.ts';
 import { LEVEL_GATE, MIN_LEVEL_GATE, tuningReading } from '../src/pitch-reference.ts';
 import { frequencyOf, song } from '../src/song.ts';
 import { sweepStaleJobs } from '../server/preparation.mjs';
+import { detectPitch } from '../public/audio/dsp.js';
 
 const HOP = 0.0213;
 const noteAt = (chart, time) => chart.find(note => time >= note.start && time < note.start + note.duration);
@@ -51,7 +53,41 @@ test('strict is the previous scoring rule and the default of the tracker', () =>
   const voice = (note, time) => note.midi + .6 * Math.sin(time * 3);
   assert.deepEqual(sing(song.notes, undefined, voice).summary, sing(song.notes, 'strict', voice).summary);
   assert.equal(new ScoreTracker(song.notes).summary(0).scoringVersion, 'encore-intonation-3');
-  assert.deepEqual(DIFFICULTIES.strict, { label: 'Estricta', full: 35, zero: 100, foldOctaves: false, nominal: false });
+  assert.deepEqual(DIFFICULTIES.strict, { label: 'Estricta', full: 35, zero: 100, foldOctaves: false, nominal: false, timing: 0 });
+});
+
+// Back-to-back short notes, the shape automatic maps take: nothing but timing separates one from the next.
+const run = Array.from({ length: 60 }, (_, i) => ({ start: 1 + i * .2, duration: .2, midi: 60 + [0, 2, 4, 5, 7, 5, 4, 2][i % 8], phrase: Math.floor(i / 10), word: 'la' }));
+
+test('a note sung a little early or late still counts in the folded difficulties, not in strict', () => {
+  for (const latency of [-.1, .1]) {
+    assert.ok(score(run, 'normal', written, { latency }) > 9300, `normal ${latency}`);
+    assert.ok(score(run, 'relaxed', written, { latency }) > 9300, `relaxed ${latency}`);
+    assert.ok(score(run, 'strict', written, { latency }) < 6000, `strict ${latency}`);
+  }
+  // Beyond the allowance the neighbouring notes no longer explain the voice.
+  assert.ok(score(run, 'normal', written, { latency: .3 }) < 6000);
+  // The allowance is for timing, not for other melodies or a held note.
+  assert.ok(score(run, 'normal', note => note.midi + 6) < 1500);
+  assert.ok(score(run, 'normal', () => 61) < 3500);
+  assert.ok(score(run, 'normal', written) > 9800);
+});
+
+test('the detector keeps a voice in noise and still finds no pitch in the noise alone', () => {
+  let seed = 3;
+  const uniform = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return (((t ^ t >>> 14) >>> 0) + .5) / 4294967296; };
+  const noise = () => Math.sqrt(-2 * Math.log(uniform())) * Math.cos(2 * Math.PI * uniform());
+  // As the worklet hears a 48 kHz microphone: three samples averaged into one at 16 kHz.
+  const heard = signal => Float32Array.from({ length: 1024 }, (_, i) => (signal(3 * i) + signal(3 * i + 1) + signal(3 * i + 2)) / 3);
+  let found = 0, close = 0, clear = 0, phantom = 0;
+  for (let frame = 0; frame < 60; frame++) {
+    // A sung note barely above the room: every one of these readings fell under the earlier threshold of 0.15.
+    const reading = detectPitch(heard(i => .1 * Math.SQRT2 * Math.sin(2 * Math.PI * 220 * (frame * 3072 + i) / 48000) + .09 * noise()), 16000);
+    if (reading.frequency) { found++; if (Math.abs(1200 * Math.log2(reading.frequency / 220)) < 100) close++; if (reading.confidence > .85) clear++; }
+    if (detectPitch(heard(() => .09 * noise()), 16000).frequency) phantom++;
+  }
+  // This rough, the reading wobbles within the semitone but never lands on another note or octave.
+  assert.ok(found >= 57, `detected ${found} of 60`); assert.ok(close >= found - 2, `right note ${close} of ${found}`); assert.ok(clear <= 3, `clear ${clear}`); assert.equal(phantom, 0);
 });
 
 test('folded difficulties accept the written note of a curved reference; strict follows the curve', () => {
@@ -140,6 +176,23 @@ test('leaked music is named as the cause instead of blaming the singer', () => {
   assert.match(performanceFeedback({ ...poor, capture: { speakerBleed: true } }).title, /música de los altavoces/);
   const fine = sing(song.notes, 'normal', written).summary;
   assert.match(performanceFeedback({ ...fine, capture: { speakerBleed: true } }).title, /Cada intento cuenta/);
+});
+
+test('the downloaded result carries the pitch trace as compact text and never the readings or any audio', () => {
+  const { summary, readings } = sing(song.notes, 'normal', written);
+  const capture = { offsetMs: 60, automaticOffset: true, reportedLatencyMs: 62, noiseFloor: .002, speakerBleed: false, suggestion: null, readings: readings.filter(reading => reading.time >= 0) };
+  const document = JSON.parse(JSON.stringify(resultDocument({ ...summary, capture }, 'microphone', { accompaniment: 'original', vocalGain: 1, transpose: 0, offsetMs: 60, microphone: null }, { ...song, bpm: 120 })));
+  assert.equal(document.capture.readings, undefined); assert.equal(document.capture.offsetMs, 60);
+  const times = document.capture.trace.times.split(',').map(Number), pitch = document.capture.trace.pitch.split(',').map(Number), level = document.capture.trace.level.split(',').map(Number);
+  assert.equal(times.length, capture.readings.length); assert.equal(pitch.length, times.length); assert.equal(level.length, times.length);
+  assert.ok(times.every((time, i) => i === 0 || time > times[i - 1]));
+  // The first note of the exercise is Do4 from 0 s; the rest between phrases has no tone.
+  const first = times.findIndex(time => time > 100 && time < 700), rest = times.findIndex(time => time > 7200 && time < 7800);
+  assert.equal(pitch[first], 6000); assert.equal(level[first], 1000); assert.equal(pitch[rest], 0);
+  assert.ok(JSON.stringify(document).length < 60000, 'a 32-second take stays small');
+  assert.deepEqual(encodeTrace([]), { times: '', pitch: '', level: '' });
+  const plain = resultDocument(summary, 'microphone', { accompaniment: 'original', vocalGain: 1, transpose: 0, offsetMs: 0, microphone: null }, { ...song, bpm: 120 });
+  assert.equal(plain.capture, undefined);
 });
 
 test('stale preparation folders are swept; recent ones and foreign files are kept', async () => {

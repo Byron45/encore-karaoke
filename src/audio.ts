@@ -113,6 +113,7 @@ export class KaraokeEngine {
             offsetMs: this.offsetMs, automaticOffset: this.automaticOffset, reportedLatencyMs: this.reportedLatencyMs, noiseFloor: this.noiseFloor, speakerBleed: this.speakerBleed,
             // Leaked music follows the track, not the singer, so it says nothing about the delay.
             suggestion: this.chart.length && !this.speakerBleed ? estimateOffset(this.chart, this.readings, this.offsetMs, this.tracker.difficulty, this.tracker.gate) : null,
+            readings: this.readings.filter(reading => reading.time >= 0),
           };
           this.stop();
           onFinish(result);

@@ -93,6 +93,31 @@ Estricta reproduce la regla anterior (`encore-intonation-2`). En Relajada y Norm
 
 Qué se comprobó y qué no: las reglas y los cuatro mecanismos están cubiertos con señal sintética que atraviesa el micrófono, el worklet y la puntuación reales (`tests/karaoke-scoring.test.mjs`, `tests/browser/karaoke-mode.spec.ts`). No se ha medido con voz humana, con altavoces y micrófono físicos ni con auriculares Bluetooth; el retraso que informa cada equipo puede no coincidir con el real, y por eso existe la propuesta posterior.
 
+## Calibración con voz real · revisión 2G
+
+Primera prueba cantada con auriculares con micrófono («Luz de Día», exigencia Normal, acompañamiento con voz al 25 %): 4.001 puntos, cobertura 73 %, afinación 55 %, error medio 121 cents, sin altavoces detectados y sin propuesta de retraso.
+
+Para saber cuánto de ese resultado dependía del sistema se usó como referencia la **voz original aislada** de la misma canción (`artifacts/audio-luz-de-dia/vocals.wav`), pasada por el detector y la puntuación de la app contra su propio mapa:
+
+| Medida | Antes | Después |
+| --- | --- | --- |
+| Voz original, exigencia Normal | 7.319 puntos · cobertura 78 % · afinación 94 % | 8.432 puntos · cobertura 88 % · afinación 96 % |
+| Voz original desplazada ±100 ms | 5.679 puntos · afinación 84 % | 7.127 puntos · afinación 90 % |
+| Otra parte de la canción sobre el mapa (control) | 872 puntos · afinación 22 % | 1.216 puntos · afinación 25 % |
+| Nota fija, la mejor de las doce (cobertura total) | 2.738 puntos | 3.010 puntos |
+
+Cambios que salen de esas medidas:
+
+- **Detector.** El umbral de periodicidad de YIN pasa de 0,15 a 0,25, y el mínimo de confianza aceptado de 0,80 a 0,75. El anterior descartaba una décima parte del tiempo cantado de una voz real, casi siempre bien afinada. Con ruido blanco, ruido grave y soplo no aparece tono con ninguno de los dos. Con música sin voz sí detecta más tono (28 % → 49 % de las lecturas), lo que solo importa si entra por el micrófono.
+- **Margen de tiempo.** En Normal (±120 ms) y Relajada (±160 ms) cada lectura se compara también con las notas contiguas a ese instante. Compensa la diferencia de fraseo con el cantante original y las notas muy cortas del mapa automático. En Estricta no hay margen.
+- **Trazo y repaso.** El resultado conserva todas las lecturas del intento; la descarga las incluye como texto compacto (`capture.trace`: milisegundos, MIDI × 100 y nivel × 10.000). Cada frase del resultado puede mostrar el trazo de la voz sobre sus notas.
+
+Se probó además elegir un periodo más corto cuando es casi igual de periódico, para reducir errores de octava: no cambió los casos sintéticos y apenas movió la voz real (afinación estricta 73 % → 75 %), así que no se adoptó.
+
+Lectura del resultado cantado, con sus límites: la cobertura del 73 % ya estaba cerca del máximo que permitía el detector (78 %). La afinación del 55 % queda entre el azar (22 %) y la voz original (94 %): la melodía se sigue, con desviación. Varias frases muestran una desviación constante de uno a dos semitonos hacia grave; sin el trazo no puede saberse si es la voz o un tramo donde el mapa sigue un coro. El mapa procede de la pista de voz separada, que incluye segundas voces.
+
+No comprobado: el efecto de estos cambios sobre esa misma interpretación, porque el resultado antiguo no guardaba las lecturas. Requiere repetir la canción.
+
 ## Letras completas y canto libre
 
 La revisión **2E** mejora la explicación de resultados: distingue cobertura parcial de afinación y muestra diagnóstico por frase. La descarga JSON (versión 4 desde la revisión 2F) incluye tiempos, señal, tono y errores por frase junto con el texto de retroalimentación, datos básicos de la referencia, la exigencia y lo medido en la captura (`capture`: retraso aplicado, ruido de fondo, altavoces y propuesta). El promedio firmado puede compensar desviaciones graves/agudas; no sustituye al error absoluto. Detalles y análisis de una prueba real en `docs/EVALUACION-02E.md`.

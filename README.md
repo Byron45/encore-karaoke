@@ -68,13 +68,17 @@ En el panel **Prepara tu voz**:
 
 La puntuación mide cuánto tiempo sostienes la nota correcta. No reconoce palabras ni valora la interpretación.
 
-| Exigencia | Crédito completo | Sin crédito desde | Octava | Referencia |
-| --- | --- | --- | --- | --- |
-| Relajada | ±100 cents (un semitono) | 200 cents | cualquiera | la nota escrita o la curva original, la más cercana |
-| Normal (por defecto) | ±50 cents | 150 cents | cualquiera | la nota escrita o la curva original, la más cercana |
-| Estricta | ±35 cents | 100 cents | exacta | la curva original |
+| Exigencia | Crédito completo | Sin crédito desde | Octava | Margen de tiempo | Referencia |
+| --- | --- | --- | --- | --- | --- |
+| Relajada | ±100 cents (un semitono) | 200 cents | cualquiera | ±160 ms | la nota escrita o la curva original, la más cercana |
+| Normal (por defecto) | ±50 cents | 150 cents | cualquiera | ±120 ms | la nota escrita o la curva original, la más cercana |
+| Estricta | ±35 cents | 100 cents | exacta | ninguno | la curva original |
 
-Los silencios previstos no suman ni restan; no cantar durante una nota sí reduce el resultado. Los resultados solo son comparables entre intentos con la misma exigencia.
+El margen de tiempo acepta una nota que entra un poco antes o se sostiene un poco después de lo que marca el mapa. Los silencios previstos no suman ni restan; no cantar durante una nota sí reduce el resultado. Los resultados solo son comparables entre intentos con la misma exigencia.
+
+**Qué puntuación esperar.** Una voz real no suena con tono el 100 % del tiempo: las consonantes y las respiraciones no tienen nota. Como referencia, la voz original de una canción, aislada y pasada por Encore contra su propio mapa automático, obtiene unos 8.400 puntos en Normal. Cantar una nota fija o una melodía sin relación queda entre 1.000 y 3.000.
+
+**Repaso.** Al terminar, cada frase tiene un botón **Ver trazo** que dibuja tu voz sobre las notas con las que se comparó: verde en la nota, ámbar cerca, rojo fuera. Sirve para distinguir si desafinaste o si el mapa no representa lo que cantaste.
 
 ## Preparación automática
 
@@ -91,6 +95,7 @@ El mapa generado es **experimental**: puede cubrir solo parte de la canción, eq
 ## Privacidad
 
 - La voz se analiza en el navegador con un AudioWorklet. No se graba ni se sube.
+- El resultado que descargas incluye el trazo de afinación del intento (la nota detectada y el nivel en cada instante), no el sonido. Solo existe en la pestaña hasta que tú lo descargas.
 - La biblioteca vive en IndexedDB, en tu navegador. No hay cuentas ni copia en la nube: borrar los datos del sitio borra la biblioteca.
 - El servidor local escucha solo en `127.0.0.1`. La preparación de audio comprueba además el origen de cada petición y un token de sesión.
 - Conexiones externas, todas iniciadas por una acción tuya salvo la primera:
@@ -101,7 +106,7 @@ El mapa generado es **experimental**: puede cubrir solo parte de la canción, eq
 ## Pruebas
 
 ```bash
-npm test             # 53 pruebas unitarias: detector, puntuación, mapas, letras, servicios
+npm test             # 56 pruebas unitarias: detector, puntuación, mapas, letras, servicios
 npm run build        # comprobación de tipos y compilación
 npm run test:browser # 39 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
 ```
@@ -127,7 +132,8 @@ docs/           Notas técnicas, plan por etapas y evaluaciones
 ## Limitaciones conocidas
 
 - **Hacen falta auriculares.** Sin ellos la música se mezcla con tu voz y la puntuación deja de ser fiable. La app lo detecta y avisa, pero no lo corrige.
-- **Sin validar con voz real.** La evaluación está comprobada con señal sintética; faltan pruebas con personas, micrófonos distintos y auriculares Bluetooth.
+- **Poca validación con voz real.** Además de la señal sintética, la evaluación se ha contrastado con la voz original aislada de una canción y con una prueba cantada con auriculares con micrófono. Faltan más personas, micrófonos y auriculares Bluetooth.
+- **El mapa automático sale de la pista de voz separada**, que incluye coros y segundas voces. En esos tramos la referencia puede no ser la melodía principal.
 - **El retraso automático es una estimación.** Parte de lo que informa el equipo, que puede no coincidir con el real; por eso existe la propuesta al terminar cada canción.
 - **El mapa automático es experimental** y suele quedar fragmentado en notas muy cortas.
 - **El audio importado no se transpone.** Se reproduce en su tono original.

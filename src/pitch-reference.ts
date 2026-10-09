@@ -29,7 +29,8 @@ export function evaluationWindow(note: Note) {
 // Input level (RMS) below which a reading counts as silence. A quiet microphone can lower it down to the floor the worklet analyses.
 export const LEVEL_GATE = .008, MIN_LEVEL_GATE = .0015;
 export function reliablePitch(frequency: number | null, confidence: number, rms: number, gate = LEVEL_GATE) {
-  return frequency !== null && Number.isFinite(frequency) && frequency > 0 && Number.isFinite(confidence) && confidence >= .8 && confidence <= 1 && Number.isFinite(rms) && rms >= gate;
+  // 0.75 is the least periodic reading the detector reports (its dip threshold is 0.25).
+  return frequency !== null && Number.isFinite(frequency) && frequency > 0 && Number.isFinite(confidence) && confidence >= .75 && confidence <= 1 && Number.isFinite(rms) && rms >= gate;
 }
 /** Signed semitones from the reference the singer is closest to. Folding compares the note regardless of its octave; nominal also accepts the written note of a curved one. */
 export function pitchError(note: Note, time: number, midi: number, foldOctaves = false, nominal = false): number {

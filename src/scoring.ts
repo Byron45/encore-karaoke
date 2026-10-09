@@ -5,11 +5,11 @@ import { evaluationWindow, LEVEL_GATE, pitchError, referenceMidiAt, reliablePitc
 export const SCORING_VERSION = 'encore-intonation-3';
 
 export type Difficulty = 'relaxed' | 'normal' | 'strict';
-// Cents of full and of zero credit. Strict is the tuner-like rule of encore-intonation-2: exact octave, following the recorded curve.
-export const DIFFICULTIES: Record<Difficulty, { label: string; full: number; zero: number; foldOctaves: boolean; nominal: boolean }> = {
-  relaxed: { label: 'Relajada', full: 100, zero: 200, foldOctaves: true, nominal: true },
-  normal: { label: 'Normal', full: 50, zero: 150, foldOctaves: true, nominal: true },
-  strict: { label: 'Estricta', full: 35, zero: 100, foldOctaves: false, nominal: false },
+// Cents of full and of zero credit, and seconds a note may be early or late. Strict is the tuner-like rule of encore-intonation-2: exact octave and instant, following the recorded curve.
+export const DIFFICULTIES: Record<Difficulty, { label: string; full: number; zero: number; foldOctaves: boolean; nominal: boolean; timing: number }> = {
+  relaxed: { label: 'Relajada', full: 100, zero: 200, foldOctaves: true, nominal: true, timing: .16 },
+  normal: { label: 'Normal', full: 50, zero: 150, foldOctaves: true, nominal: true, timing: .12 },
+  strict: { label: 'Estricta', full: 35, zero: 100, foldOctaves: false, nominal: false, timing: 0 },
 };
 const credit = (cents: number, difficulty: Difficulty) => Math.max(0, Math.min(1, (DIFFICULTIES[difficulty].zero - cents) / (DIFFICULTIES[difficulty].zero - DIFFICULTIES[difficulty].full)));
 
@@ -26,6 +26,16 @@ export interface CaptureReport {
   offsetMs: number; automaticOffset: boolean; reportedLatencyMs: number | null;
   noiseFloor: number | null; speakerBleed: boolean;
   suggestion: { offsetMs: number; score: number } | null;
+  // Every pitch reading of the take, in uncompensated song time. No audio is kept.
+  readings: Reading[];
+}
+/** The readings as compact text for the downloaded result: milliseconds, MIDI × 100 (0 without a tone) and level × 10 000, one entry per analysis step. */
+export function encodeTrace(readings: Reading[]) {
+  return {
+    times: readings.map(reading => Math.round(reading.time * 1000)).join(','),
+    pitch: readings.map(reading => reading.frequency ? Math.round(midiOf(reading.frequency) * 100) : 0).join(','),
+    level: readings.map(reading => Math.round(reading.rms * 10000)).join(','),
+  };
 }
 export type Summary = ReturnType<ScoreTracker['summary']> & { capture?: CaptureReport };
 
@@ -90,7 +100,14 @@ export class ScoreTracker {
         const parts = Math.ceil(overlap / .01);
         for (let part = 0; part < parts; part++) {
           const weight = overlap / parts, at = left + weight * (part + .5);
-          const octave = midi - referenceMidiAt(note, at), difference = pitchError(note, at, midi, rules.foldOctaves, rules.nominal);
+          const octave = midi - referenceMidiAt(note, at);
+          let difference = pitchError(note, at, midi, rules.foldOctaves, rules.nominal);
+          // A note reached a little early or held a little late still counts: the notes next to this instant are accepted too.
+          if (rules.timing && this.ordered) {
+            const fit = (other: Note, edge: number) => { const error = pitchError(other, edge, midi, rules.foldOctaves, rules.nominal); if (Math.abs(error) < Math.abs(difference)) difference = error; };
+            for (let near = index - 1; near >= 0 && at - this.chart[near].start - this.chart[near].duration <= rules.timing; near--) fit(this.chart[near], this.chart[near].start + this.chart[near].duration);
+            for (let near = index + 1; near < this.chart.length && this.chart[near].start - at <= rules.timing; near++) fit(this.chart[near], this.chart[near].start);
+          }
           this.earned[index] += weight * credit(Math.abs(difference * 100), this.difficulty);
           this.absoluteCents += weight * Math.abs(difference * 100);
           this.noteAbsoluteCents[index] += weight * Math.abs(difference * 100);

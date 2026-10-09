@@ -2,7 +2,7 @@ import type { Summary, Mode } from './audio';
 import type { PlayableSong } from './library-model';
 import type { Accompaniment } from './preparation';
 import type { ActiveMicrophone } from './microphone';
-import { performanceFeedback } from './scoring.ts';
+import { encodeTrace, performanceFeedback } from './scoring.ts';
 
 export interface SessionInfo {
   accompaniment: Accompaniment; vocalGain: number; transpose: number; offsetMs: number;
@@ -12,12 +12,15 @@ export interface SessionInfo {
 export function resultDocument(summary: Summary, mode: Mode, session: SessionInfo, song: PlayableSong) {
   const scored = song.notes.length > 0;
   const experimentalMap = song.notes.some(n => n.source === 'automatic');
+  // The readings travel as compact text: one object per reading would make a four-minute song several megabytes.
+  const { readings, ...capture } = summary.capture || { readings: undefined };
   return {
     version: 4, song: song.title, mode: !scored && mode === 'demo' ? 'listen' : mode,
     simulated: scored && mode === 'demo', scored, createdAt: new Date().toISOString(), ...session,
     experimentalMap,
     ...(scored ? {
       ...summary,
+      ...(summary.capture ? { capture: { ...capture, ...(readings ? { trace: encodeTrace(readings) } : {}) } } : {}),
       reference: {
         audioDuration: song.duration, noteCount: song.notes.length,
         curvedNoteCount: song.notes.filter(n => n.pitchCurve).length,

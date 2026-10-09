@@ -128,4 +128,28 @@ test('with headphones nothing is announced and the count-in stays out of the sco
   await expect(page.getByText('captando la música', { exact: false })).toHaveCount(0);
   await expect(page.locator('.result-heading h2')).toHaveText('Cada intento cuenta.');
   expect(await points(page)).toBeGreaterThan(8500);
+
+  // The take can be reviewed phrase by phrase: the voice drawn over the notes it was scored against.
+  await expect(page.locator('.phrase-review')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Ver trazo' }).first().click();
+  const review = page.locator('.phrase-review');
+  await expect(review.locator('rect')).toHaveCount(1);
+  expect(await review.locator('circle').count()).toBeGreaterThan(30);
+  expect(await review.locator('circle[fill="#c4f26b"]').count()).toBeGreaterThan(30);
+  await expect(review).toContainText('de las lecturas en la nota');
+  await page.getByRole('button', { name: 'Ver trazo' }).click();
+  await expect(page.locator('.phrase-review')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Ocultar trazo' }).click();
+  await expect(page.locator('.phrase-review')).toHaveCount(0);
+
+  const downloading = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Descargar resultado' }).click();
+  const stream = await (await downloading).createReadStream(), chunks = [];
+  for await (const chunk of stream!) chunks.push(chunk);
+  const result = JSON.parse(Buffer.concat(chunks).toString());
+  expect(result.capture.readings).toBeUndefined();
+  const pitch = result.capture.trace.pitch.split(',').map(Number);
+  expect(result.capture.trace.times.split(',')).toHaveLength(pitch.length);
+  // Do4 and Mi4 were sung, and nothing else.
+  expect(new Set(pitch.filter((value: number) => value).map((value: number) => Math.round(value / 100)))).toEqual(new Set([60, 64]));
 });
