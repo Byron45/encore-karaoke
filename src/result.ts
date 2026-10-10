@@ -27,6 +27,9 @@ export function resultDocument(summary: Summary, mode: Mode, session: SessionInf
         automaticNoteCount: song.notes.filter(n => n.source === 'automatic').length,
         // Describes the played chart; the preparation may have been edited since generation.
         mappedSeconds: Math.round(song.notes.reduce((sum, n) => sum + n.duration, 0) * 1000) / 1000,
+        omittedNotes: song.omittedNotes || 0,
+        // The chart as played, so a result can be studied on its own: start and duration in milliseconds, MIDI note and phrase.
+        chart: song.notes.map(n => `${Math.round(n.start * 1000)}:${Math.round(n.duration * 1000)}:${n.midi}:${n.phrase}`).join(','),
       },
       ...(mode === 'microphone' ? { feedback: performanceFeedback(summary, session.transpose, !song.audio, experimentalMap) } : {}),
     } : { score: null }),

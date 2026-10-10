@@ -76,7 +76,9 @@ La puntuación mide cuánto tiempo sostienes la nota correcta. No reconoce palab
 
 El margen de tiempo acepta una nota que entra un poco antes o se sostiene un poco después de lo que marca el mapa. Los silencios previstos no suman ni restan; no cantar durante una nota sí reduce el resultado. Los resultados solo son comparables entre intentos con la misma exigencia.
 
-**Qué puntuación esperar.** Una voz real no suena con tono el 100 % del tiempo: las consonantes y las respiraciones no tienen nota. Como referencia, la voz original de una canción, aislada y pasada por Encore contra su propio mapa automático, obtiene unos 8.400 puntos en Normal. Cantar una nota fija o una melodía sin relación queda entre 1.000 y 3.000.
+**Qué puntuación esperar.** Una voz real no suena con tono el 100 % del tiempo: las consonantes y las respiraciones no tienen nota. Como referencia, la voz original de dos canciones, aislada y pasada por Encore contra su propio mapa automático, obtuvo 6.800 y 8.400 puntos en Normal. Cantar una nota fija o una melodía sin relación queda entre 1.000 y 3.000.
+
+**Qué no se evalúa.** Si la letra tiene tiempos por línea, las notas de un mapa automático que caen fuera de las líneas cantadas (introducción, interludios) se dejan fuera; el escenario indica cuántas. Tampoco puntúa lo que tus auriculares dejan pasar a su propio micrófono: el umbral de silencio se ajusta al nivel de tu voz en cada canción.
 
 **Repaso.** Al terminar, cada frase tiene un botón **Ver trazo** que dibuja tu voz sobre las notas con las que se comparó: verde en la nota, ámbar cerca, rojo fuera. Sirve para distinguir si desafinaste o si el mapa no representa lo que cantaste.
 
@@ -106,9 +108,9 @@ El mapa generado es **experimental**: puede cubrir solo parte de la canción, eq
 ## Pruebas
 
 ```bash
-npm test             # 56 pruebas unitarias: detector, puntuación, mapas, letras, servicios
+npm test             # 58 pruebas unitarias: detector, puntuación, mapas, letras, servicios
 npm run build        # comprobación de tipos y compilación
-npm run test:browser # 39 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
+npm run test:browser # 40 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
 ```
 
 Las pruebas de navegador hacen pasar una voz sintética por el micrófono, el detector y la puntuación reales. No sustituyen una prueba con voz humana.
@@ -133,7 +135,8 @@ docs/           Notas técnicas, plan por etapas y evaluaciones
 
 - **Hacen falta auriculares.** Sin ellos la música se mezcla con tu voz y la puntuación deja de ser fiable. La app lo detecta y avisa, pero no lo corrige.
 - **Poca validación con voz real.** Además de la señal sintética, la evaluación se ha contrastado con la voz original aislada de una canción y con una prueba cantada con auriculares con micrófono. Faltan más personas, micrófonos y auriculares Bluetooth.
-- **El mapa automático sale de la pista de voz separada**, que incluye coros y segundas voces. En esos tramos la referencia puede no ser la melodía principal.
+- **El mapa automático sale de la pista de voz separada**, que incluye coros, segundas voces y a veces instrumentos. En esos tramos la referencia puede no ser la melodía principal. Sin letra con tiempos, las notas de los tramos instrumentales no se pueden descartar.
+- **La escala es exigente.** Ni la voz original llega a 10.000, y una voz sin entrenar que sigue la melodía puede quedar por debajo de 5.000.
 - **El retraso automático es una estimación.** Parte de lo que informa el equipo, que puede no coincidir con el real; por eso existe la propuesta al terminar cada canción.
 - **El mapa automático es experimental** y suele quedar fragmentado en notas muy cortas.
 - **El audio importado no se transpone.** Se reproduce en su tono original.

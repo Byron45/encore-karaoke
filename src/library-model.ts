@@ -1,7 +1,7 @@
 import type { Note } from './song.ts';
 import { validPitchCurve } from './pitch-reference.ts';
-import { compileLyrics } from './lyrics.ts';
-import type { LyricsDocument } from './lyrics.ts';
+import { compileLyrics, cueAt } from './lyrics.ts';
+import type { LyricCue, LyricsDocument } from './lyrics.ts';
 import type { PreparedAudio, AutomaticMapInfo } from './preparation';
 export const MAX_MAP_BYTES = 12 * 1024 * 1024;
 
@@ -16,6 +16,32 @@ export interface LibrarySong {
 export interface PlayableSong {
   title: string; artist: string; duration: number; bpm: number | null; notes: Note[]; phrases: string[];
   audio?: Blob; id?: string; lyrics?: LyricsDocument; prepared?: PreparedAudio; automaticMap?: AutomaticMapInfo;
+  // Notes of the saved map left out of this take because no lyric line is sung there.
+  omittedNotes?: number;
+}
+// A voice often comes in a moment ahead of its line's timestamp.
+const LEAD_IN = 1;
+/**
+ * An automatic map is drawn from the separated vocal track, which also keeps instruments that carry a tune. With line-timed
+ * lyrics, only the notes inside a sung line are kept and each line becomes a phrase: the introduction and the instrumental
+ * breaks are not sung, so they are not scored. A map written by hand is never touched, and neither is the saved one.
+ */
+export function sungNotes(notes: Note[], lyrics: LyricsDocument | undefined, duration: number): Note[] {
+  if (lyrics?.format !== 'lrc' || !notes.length || notes.some(note => note.source !== 'automatic')) return notes;
+  let cues: LyricCue[];
+  try { cues = compileLyrics(lyrics, duration).cues; } catch { return notes; }
+  const kept: Note[] = [];
+  let phrase = -1, line = -2;
+  for (const note of notes) {
+    const middle = note.start + note.duration / 2;
+    let index = cueAt(cues, middle);
+    if (!cues[index]?.text && cues[index + 1]?.text && cues[index + 1].start - middle <= LEAD_IN) index++;
+    if (!cues[index]?.text) continue;
+    if (index !== line) { phrase++; line = index; }
+    kept.push({ ...note, phrase, phraseLabel: cues[index].text.slice(0, 1000) });
+  }
+  // Lyrics that fit none of the notes belong to another version: better the whole map than an empty one.
+  return kept.length ? kept : notes;
 }
 export function phrasesOf(notes: Note[]): string[] {
   const result: string[] = [];
@@ -29,7 +55,8 @@ export function playable(record: LibrarySong): PlayableSong {
   const errors = validateNotes(record.notes, record.duration);
   if (record.lyrics) compileLyrics(record.lyrics, record.duration);
   if (errors.length && !(record.notes.length === 0 && record.lyrics?.raw.trim())) throw new Error(errors[0]);
-  return { ...record, phrases: phrasesOf(record.notes) };
+  const notes = sungNotes(record.notes, record.lyrics, record.duration);
+  return { ...record, notes, phrases: phrasesOf(notes), omittedNotes: record.notes.length - notes.length };
 }
 export function validateNotes(value: unknown, duration: number): string[] {
   if (!Array.isArray(value) || value.length === 0) return ['Añade al menos una nota con su palabra y tiempo para cantar con puntuación.'];

@@ -25,6 +25,8 @@ export interface Reading { time: number; span: number; frequency: number | null;
 export interface CaptureReport {
   offsetMs: number; automaticOffset: boolean; reportedLatencyMs: number | null;
   noiseFloor: number | null; speakerBleed: boolean;
+  // Input level (RMS) the microphone rested at during the song and the level the singer reached; the silence gate comes from both.
+  restingLevel: number; voiceLevel: number;
   suggestion: { offsetMs: number; score: number } | null;
   // Every pitch reading of the take, in uncompensated song time. No audio is kept.
   readings: Reading[];

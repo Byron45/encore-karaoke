@@ -2,17 +2,18 @@ import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 
-function wav(seconds: number) {
+function wav(seconds: number, amplitude = 1500) {
   const rate = 16000, count = rate * seconds, bytes = Buffer.alloc(44 + count * 2);
   bytes.write('RIFF', 0); bytes.writeUInt32LE(36 + count * 2, 4); bytes.write('WAVEfmt ', 8); bytes.writeUInt32LE(16, 16); bytes.writeUInt16LE(1, 20); bytes.writeUInt16LE(1, 22); bytes.writeUInt32LE(rate, 24); bytes.writeUInt32LE(rate * 2, 28); bytes.writeUInt16LE(2, 32); bytes.writeUInt16LE(16, 34); bytes.write('data', 36); bytes.writeUInt32LE(count * 2, 40);
-  for (let i = 0; i < count; i++) bytes.writeInt16LE(Math.round(Math.sin(2 * Math.PI * 98 * i / rate) * 1500), 44 + i * 2);
+  for (let i = 0; i < count; i++) bytes.writeInt16LE(Math.round(Math.sin(2 * Math.PI * 98 * i / rate) * amplitude), 44 + i * 2);
   return bytes;
 }
-async function importSong(page: Page, seconds: number, notes: { start: number; duration: number; midi: number; word: string; phrase: number }[]) {
-  const audio = wav(seconds);
+async function importSong(page: Page, seconds: number, notes: { start: number; duration: number; midi: number; word: string; phrase: number }[], options: { lrc?: string; silent?: boolean } = {}) {
+  const audio = wav(seconds, options.silent ? 0 : 1500), automatic = notes.some(note => 'source' in note);
   await page.goto('/'); await page.getByRole('button', { name: 'Biblioteca', exact: true }).click();
   await page.getByLabel('Archivo de audio').setInputFiles({ name: 'modo.wav', mimeType: 'audio/wav', buffer: audio });
-  await page.getByLabel('Archivo del mapa').setInputFiles({ name: 'mapa.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ schemaVersion: 1, audio: { sha256: createHash('sha256').update(audio).digest('hex'), duration: seconds }, notes })) });
+  await page.getByLabel('Archivo del mapa').setInputFiles({ name: 'mapa.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ schemaVersion: automatic ? 2 : 1, audio: { sha256: createHash('sha256').update(audio).digest('hex'), duration: seconds }, notes })) });
+  if (options.lrc) { await page.getByLabel('Formato de letra').selectOption('lrc'); await page.getByLabel('Letra completa', { exact: true }).fill(options.lrc); }
   await page.getByRole('button', { name: 'Guardar y cantar' }).click();
   await expect(page.locator('.track-heading h2')).toHaveText('modo');
 }
@@ -117,6 +118,38 @@ test('speakers leaking into the microphone are announced while singing and named
   await expect(page.locator('.result-panel')).toBeVisible({ timeout: 13000 });
   await expect(page.locator('.result-heading h2')).toHaveText('El micrófono captó la música de los altavoces.');
   await expect(page.getByRole('button', { name: /^Usar \d+ ms$/ })).toHaveCount(0);
+});
+
+test('an automatic map with timed lyrics scores only the sung lines, and what the headphones leak earns nothing', async ({ page }) => {
+  const heard = (start: number, duration: number, midi: number, phrase: number) => ({ start, duration, midi, phrase, word: '', source: 'automatic', confidence: .9, phraseLabel: `Sección vocal ${phrase + 1}` });
+  // The separated vocal track kept a played introduction and a break; the lyrics say where the voice really is.
+  const notes = [heard(.5, 1, 67, 0), heard(1.7, .8, 65, 0), heard(3.6, 1, 60, 1), heard(4.8, 1, 62, 1), heard(6.5, .8, 69, 2), heard(8.1, 1, 64, 3), heard(9.3, 1, 65, 3)];
+  // The singer skips the last note; the guide still sounds it and leaks faintly into the microphone.
+  await studio(page, { notes: notes.filter((note, i) => [2, 3, 5].includes(i)), bleed: .05 });
+  await importSong(page, 12, notes, { lrc: '[00:03.50]Primera línea\n[00:06.20]\n[00:08.00]Segunda línea\n[00:10.60]', silent: true });
+  await expect(page.locator('.track-heading')).toContainText('4 notas');
+  await expect(page.locator('.track-heading')).toContainText('3 fuera de la letra, sin evaluar');
+  await expect(page.locator('.reference-note')).toContainText('Do4');
+  await page.getByRole('button', { name: 'Empezar a cantar' }).click();
+  await expect(page.locator('.result-panel')).toBeVisible({ timeout: 22000 });
+  await expect(page.locator('.phrase-results>div')).toHaveCount(2);
+  await expect(page.locator('.phrase-results>div').nth(0)).toContainText('Primera línea');
+  await expect(page.locator('.phrase-results>div').nth(1)).toContainText('Segunda línea');
+  await expect(page.getByText('captando la música', { exact: false })).toHaveCount(0);
+  const downloading = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Descargar resultado' }).click();
+  const stream = await (await downloading).createReadStream(), chunks = [];
+  for await (const chunk of stream!) chunks.push(chunk);
+  const result = JSON.parse(Buffer.concat(chunks).toString());
+  expect(result.reference.noteCount).toBe(4); expect(result.reference.omittedNotes).toBe(3);
+  expect(result.reference.chart.split(',')).toHaveLength(4);
+  expect(result.capture.speakerBleed).toBe(false);
+  expect(result.levelGate).toBeGreaterThanOrEqual(.008);
+  expect(result.phrases[0]).toBeGreaterThan(85);
+  // Half of the second line was sung. The leaked guide is in the trace, and it did not score.
+  expect(result.phrases[1]).toBeGreaterThan(35); expect(result.phrases[1]).toBeLessThan(62);
+  const times = result.capture.trace.times.split(',').map(Number), pitch = result.capture.trace.pitch.split(',').map(Number);
+  expect(pitch.filter((value: number, i: number) => times[i] > 9450 && times[i] < 10250 && Math.round(value / 100) === 65).length).toBeGreaterThan(10);
 });
 
 test('with headphones nothing is announced and the count-in stays out of the score', async ({ page }) => {

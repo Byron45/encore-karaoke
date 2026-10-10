@@ -87,7 +87,7 @@ Estricta reproduce la regla anterior (`encore-intonation-2`). En Relajada y Norm
 
 **Retraso.** Sin ajuste propio, cada canción usa el retraso que informa el equipo (salida + entrada, de 0 a 300 ms) y el resultado lo indica como automático. Al terminar, la app vuelve a puntuar lo cantado con otros retrasos; si uno explica claramente mejor el intento, propone usarlo con un botón. El valor elegido se guarda por micrófono y «Volver a automático» lo descarta. El control manual sigue disponible. La propuesta parte de que el mapa está bien sincronizado: con un mapa desplazado propondrá compensar ese desplazamiento.
 
-**Nivel del micrófono.** Durante la cuenta atrás se mide el ruido de fondo. Si la entrada es silenciosa, el umbral de silencio baja (hasta 0,0015 de RMS) para que una voz suave o un micrófono con poca ganancia cuenten; nunca sube por encima del valor anterior (0,008). El resultado descargado incluye el umbral usado (`levelGate`) y el ruido medido.
+**Nivel del micrófono.** Durante la cuenta atrás se mide el ruido de fondo. Si la entrada es silenciosa, el umbral de silencio baja (hasta 0,0015 de RMS) para que una voz suave o un micrófono con poca ganancia cuenten; nunca sube por encima del valor anterior (0,008). El resultado descargado incluye el umbral usado (`levelGate`) y el ruido medido. *Esta regla se sustituyó en la revisión 2H: dejaba pasar la fuga de los auriculares.*
 
 **Altavoces.** Si el micrófono oye los clics de la cuenta atrás, la música está entrando por él. La app lo avisa mientras cantas, mantiene el umbral de silencio normal, no propone retraso y, si el resultado es bajo, lo atribuye a los altavoces en lugar de a tu canto. Sobre una grabación propia los clics suenan más fuertes que antes para que la comprobación sea representativa. No es cancelación de eco: la solución sigue siendo usar auriculares.
 
@@ -117,6 +117,40 @@ Se probó además elegir un periodo más corto cuando es casi igual de periódic
 Lectura del resultado cantado, con sus límites: la cobertura del 73 % ya estaba cerca del máximo que permitía el detector (78 %). La afinación del 55 % queda entre el azar (22 %) y la voz original (94 %): la melodía se sigue, con desviación. Varias frases muestran una desviación constante de uno a dos semitonos hacia grave; sin el trazo no puede saberse si es la voz o un tramo donde el mapa sigue un coro. El mapa procede de la pista de voz separada, que incluye segundas voces.
 
 No comprobado: el efecto de estos cambios sobre esa misma interpretación, porque el resultado antiguo no guardaba las lecturas. Requiere repetir la canción.
+
+## Fuga de los auriculares y notas sin letra · revisión 2H
+
+Segunda prueba cantada («Un Millón de Primaveras», misma configuración, guía activada): 3.915 puntos. El usuario observó que la puntuación subía en los interludios, sin cantar. El trazo del resultado lo confirmó y mostró dos causas.
+
+**Fuga.** En la introducción, sin voz, el micrófono registró 136 lecturas con tono a un nivel de 0,004–0,009, y 101 superaron el umbral de 0,0054 que había fijado la revisión 2F a partir del ruido de la sala. Es la música de los propios auriculares colándose en su micrófono; con la guía activada coincide con las notas del mapa y puntuaba con afinación del 98–100 %. La voz del usuario llegaba a 0,03–0,14: veinte veces más.
+
+El umbral de silencio ya no depende del ruido de fondo sino de la toma: `LevelStats` resume el nivel en reposo (percentil 20) y el del cantante (percentil 85), y `levelGate` decide.
+
+| Situación | Umbral |
+| --- | --- |
+| Nada destaca sobre el reposo (nadie canta, tono sostenido) | 0,008, el valor por defecto |
+| Voz a nivel normal (≥ 0,032) | 12 % del nivel de la voz, entre 0,008 y 0,012 |
+| Voz baja pero clara (cuatro veces el reposo) | 25 % del nivel de la voz, con mínimo 0,0015 |
+
+Durante la canción el umbral se actualiza cada segundo a partir de los diez primeros; el resultado final vuelve a puntuar todas las lecturas con el umbral definitivo, así que los primeros segundos se juzgan igual que el resto. Límite: con un micrófono de muy poca ganancia la fuga y la voz pueden quedar a niveles parecidos y ningún umbral las separa.
+
+**Notas sin letra.** El mapa de esa canción tenía 51 notas (10 s de 68,6 s) en la introducción y el interludio: instrumentos que el separador deja en la pista de voz. `sungNotes` conserva, cuando la letra tiene tiempos por línea, solo las notas dentro de una línea cantada (con un segundo de margen antes de cada línea) y agrupa las frases por línea. El mapa guardado no se modifica; el escenario indica cuántas notas quedan fuera. Sin letra con tiempos no hay forma de distinguirlas y el mapa se usa entero.
+
+Efecto sobre esa toma, recalculada con su trazo y el mapa regenerado (394 notas, idéntico al del usuario):
+
+| | Puntos | Cobertura | Afinación |
+| --- | --- | --- | --- |
+| Como se puntuó | 3.853 (la app mostró 3.915) | 69 % | 56 % |
+| Con el umbral nuevo | 3.259 | 62 % | 52 % |
+| Con el umbral nuevo y sin las notas instrumentales | 3.818 | 73 % | 52 % |
+
+El número casi no cambia, pero unos 600 puntos de la toma eran de la fuga y ahora todos corresponden a la voz.
+
+**Por qué la puntuación sigue baja.** Con el trazo se comparó la voz del usuario de tres maneras, y coinciden: está en la nota (±50 cents) entre el 28 % y el 36 % del tiempo y dentro de un semitono alrededor de la mitad; el azar da un 15 %. La desviación es hacia grave: mediana de −51 cents respecto al mapa, la mitad de las lecturas por debajo de la nota y una quinta parte por encima. El primer verso empieza un tono y medio bajo y converge hacia el minuto 1:00. No hay desfase de tiempo: la coincidencia es máxima sin desplazar la toma.
+
+La voz original de esa canción obtiene 6.845 puntos contra su mapa (8.432 en «Luz de Día»). En esta canción la pista de voz separada conserva mucho bajo —el 45 % de sus lecturas con tono caen por debajo de Do3— y el detector de la app se confunde con él; el mapa, hecho con CREPE, no tiene ese problema (3 notas por debajo de Do3). El separador usa un modelo pensado para el instrumental, y la voz es el residuo.
+
+El resultado descargado incluye ahora el mapa tal como se cantó (`reference.chart`), el nivel en reposo y el de la voz.
 
 ## Letras completas y canto libre
 

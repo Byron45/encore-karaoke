@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ScoreTracker, DIFFICULTIES, encodeTrace, estimateOffset, performanceFeedback, pitchQuality } from '../src/scoring.ts';
 import { resultDocument } from '../src/result.ts';
-import { hearsCountIn, levelGate, noiseFloor, reportedLatency } from '../src/capture.ts';
+import { hearsCountIn, levelGate, LevelStats, LOUD_LEVEL_GATE, noiseFloor, reportedLatency } from '../src/capture.ts';
+import { phrasesOf, playable, sungNotes, validateNotes } from '../src/library-model.ts';
 import { LEVEL_GATE, MIN_LEVEL_GATE, tuningReading } from '../src/pitch-reference.ts';
 import { frequencyOf, song } from '../src/song.ts';
 import { sweepStaleJobs } from '../server/preparation.mjs';
@@ -128,20 +129,93 @@ test('a delayed performance yields the delay that explains it, and nothing when 
   assert.equal(estimateOffset(quick, sing(quick, 'normal', () => null).readings, 0, 'normal'), null);
 });
 
-test('a quiet microphone lowers the silence gate; noise and leaked music never do', () => {
-  assert.equal(levelGate(null, false), LEVEL_GATE);
-  assert.equal(levelGate(.0002, false), MIN_LEVEL_GATE);
-  assert.equal(levelGate(.002, false), .005);
-  assert.equal(levelGate(.02, false), LEVEL_GATE);
-  assert.equal(levelGate(.0002, true), LEVEL_GATE);
+test('the silence gate follows the singer: default at a normal level, lower only for a clear quiet voice', () => {
+  const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} ≠ ${expected}`);
+  // Resting level, singer's level -> gate.
+  close(levelGate(.0043, .099), .01188);          // a headset: just above its own leak
+  close(levelGate(.003, .04), LEVEL_GATE);
+  close(levelGate(.002, .3), LOUD_LEVEL_GATE);    // a loud voice never pushes it past this
+  close(levelGate(.0005, .02), .005);             // a quiet microphone
+  close(levelGate(.0001, .003), MIN_LEVEL_GATE);
+  close(levelGate(0, .0042), MIN_LEVEL_GATE);
+  // Nothing stands out from the resting level: a held tone, an empty room, or only what the headphones leak.
+  for (const [idle, voice] of [[.1, .1], [.0033, .0065], [0, 0], [.004, .012]]) close(levelGate(idle, voice), LEVEL_GATE);
+  // With the speakers heard in the count-in it is never lowered.
+  close(levelGate(.0005, .02, true), LEVEL_GATE); close(levelGate(.0043, .099, true), .01188);
+
+  const stats = new LevelStats();
+  for (let i = 0; i < 1000; i++) stats.add(i < 450 ? .004 : i < 500 ? .012 : .08);
+  assert.ok(Math.abs(stats.idle - .004) < .0004); assert.ok(Math.abs(stats.voice - .08) < .008); assert.equal(stats.count, 1000);
+  stats.add(NaN); assert.equal(stats.count, 1000);
+  const silent = new LevelStats(); for (let i = 0; i < 100; i++) silent.add(i < 60 ? 0 : .1);
+  assert.equal(silent.idle, 0); assert.ok(silent.voice > .09);
+  assert.equal(new LevelStats().voice, 0);
+
   const soft = { rms: .004 };
   assert.equal(score(song.notes, 'normal', written, soft), 0);
-  assert.ok(score(song.notes, 'normal', written, { ...soft, gate: levelGate(.0005, false) }) > 9800);
+  assert.ok(score(song.notes, 'normal', written, { ...soft, gate: levelGate(0, .004) }) > 9800);
   // Sound without a pitch earns nothing whatever the gate.
   const tracker = new ScoreTracker(song.notes, 'relaxed', MIN_LEVEL_GATE);
   for (let time = 0; time < 32; time += HOP) tracker.sample(time, HOP, null, 0, .05);
   assert.equal(tracker.summary(32).score, 0); assert.equal(tracker.summary(32).signalCoverage, 100); assert.equal(tracker.summary(32).coverage, 0);
   assert.equal(noiseFloor([{ time: 0, rms: .1 }]), null);
+});
+
+test('what headphones leak into their microphone scores nothing, in the introduction or between phrases', () => {
+  // A song with a played introduction, a sung verse, an instrumental break and another verse. The guide sounds the map's own notes.
+  const chart = [[2, 6], [12, 30], [34, 40], [44, 62]].flatMap(([from, to], phrase) => Array.from({ length: Math.floor((to - from) / .5) }, (_, i) => ({ start: from + i * .5, duration: .4, midi: 60 + [0, 2, 4, 5, 7][i % 5], phrase, word: 'la' })));
+  const sung = time => time >= 12 && time < 30 || time >= 44 && time < 62;
+  const levels = new LevelStats(), readings = [];
+  let seed = 4; const random = () => { seed = seed * 1664525 + 1013904223 >>> 0; return seed / 2 ** 32; };
+  for (let time = 0; time < 64; time += HOP) {
+    const note = noteAt(chart, time), voice = note && sung(time);
+    // The leak carries the guide at the level of a quiet room; the singer is twenty times louder.
+    const rms = voice ? .05 + .08 * random() : .0035 + (note ? .004 * random() : .001 * random());
+    readings.push({ time, span: HOP, frequency: note ? frequencyOf(note.midi) : null, confidence: 1, rms }); levels.add(rms);
+  }
+  const play = gate => { const tracker = new ScoreTracker(chart, 'normal', gate); for (const r of readings) tracker.sample(r.time, r.span, r.frequency, r.confidence, r.rms); return tracker.summary(64); };
+  const gate = levelGate(levels.idle, levels.voice);
+  assert.ok(gate > .009 && gate <= LOUD_LEVEL_GATE, `gate ${gate}`);
+  const fair = play(gate), fooled = play(.0054);
+  // The earlier gate, tied to the noise of the room, let the song score itself where nobody sang.
+  assert.ok(fooled.phrases[0] > 30 && fooled.phrases[2] > 30, `fooled ${fooled.phrases}`);
+  assert.deepEqual([fair.phrases[0], fair.phrases[2]], [0, 0]);
+  assert.ok(fair.phrases[1] > 95 && fair.phrases[3] > 95, `sung ${fair.phrases}`);
+  assert.equal(fair.phraseDiagnostics[0].signalCoverage, 0); assert.equal(fair.phraseDiagnostics[0].intonation, null);
+  // Nobody singing at all: the leak alone does not stand out from the resting level, so the default gate holds.
+  const empty = new LevelStats(); for (const r of readings) empty.add(Math.min(r.rms, .0075));
+  assert.equal(levelGate(empty.idle, empty.voice), LEVEL_GATE);
+});
+
+const lrc = raw => ({ raw, format: 'lrc', offset: 0 });
+const automatic = (start, duration = .3, midi = 60) => ({ start, duration, midi, word: '', phrase: 0, source: 'automatic', confidence: .9, phraseLabel: 'Sección vocal 1' });
+
+test('with line-timed lyrics an automatic map keeps only the notes inside a sung line', () => {
+  const lyrics = lrc('[00:10.00]Primera línea\n[00:20.00]Segunda línea\n[00:30.00]\n[00:45.00]Tercera línea\n[00:55.00]');
+  const notes = [1, 4, 8.5, 9.4, 10.2, 15, 21, 29.5, 31, 38, 43.5, 44.6, 46, 54, 56, 58].map(start => automatic(start));
+  const kept = sungNotes(notes, lyrics, 60);
+  // Out: the introduction (1, 4, 8.5), the break (31, 38, 43.5) and what follows the last line (56, 58). In: a second of lead-in (9.4, 44.6).
+  assert.deepEqual(kept.map(note => note.start), [9.4, 10.2, 15, 21, 29.5, 44.6, 46, 54]);
+  assert.deepEqual(kept.map(note => note.phrase), [0, 0, 0, 1, 1, 2, 2, 2]);
+  assert.deepEqual(phrasesOf(kept), ['Primera línea', 'Segunda línea', 'Tercera línea']);
+  assert.deepEqual(validateNotes(kept, 60), []);
+  assert.equal(notes[0].phraseLabel, 'Sección vocal 1', 'the saved map is not modified');
+
+  // The lyric offset moves the lines, and the notes follow them.
+  assert.deepEqual(sungNotes(notes, { ...lyrics, offset: -6 }, 60).map(note => note.start).slice(0, 3), [4, 8.5, 9.4]);
+  // Untouched: no lyrics, plain lyrics, a map written by hand, or lyrics that fit none of the notes.
+  const manual = notes.map(note => ({ ...note, source: undefined, word: 'la' }));
+  assert.equal(sungNotes(notes, undefined, 60), notes);
+  assert.equal(sungNotes(notes, { raw: 'Sin tiempos', format: 'plain', offset: 0 }, 60), notes);
+  assert.equal(sungNotes(manual, lyrics, 60), manual);
+  assert.equal(sungNotes([automatic(1), automatic(4)], lyrics, 60).length, 2);
+
+  const record = { id: 'x', title: 'Canción', artist: '', duration: 60, bpm: null, notes, lyrics, audioHash: 'h', audioName: 'a.mp3', updatedAt: '' };
+  const song = playable(record);
+  assert.equal(song.notes.length, 8); assert.equal(song.omittedNotes, 8); assert.equal(song.phrases.length, 3); assert.equal(record.notes.length, 16);
+  const document = resultDocument(new ScoreTracker(song.notes, 'normal').summary(60), 'microphone', { accompaniment: 'original', vocalGain: 1, transpose: 0, offsetMs: 0, microphone: null }, song);
+  assert.equal(document.reference.omittedNotes, 8); assert.equal(document.reference.noteCount, 8);
+  assert.equal(document.reference.chart.split(',')[0], '9400:300:60:0'); assert.equal(document.reference.chart.split(',').length, 8);
 });
 
 function countIn(level, { echo = 0, latency = .09, floor = .0005, extra = () => 0 } = {}) {

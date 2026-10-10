@@ -7,7 +7,7 @@ import type { ActiveMicrophone, InputReading } from './microphone';
 import type { Accompaniment } from './preparation';
 import { verifyStem } from './preparation';
 import { LEVEL_GATE, referenceMidiAt } from './pitch-reference';
-import { hearsCountIn, levelGate, noiseFloor, reportedLatency } from './capture';
+import { hearsCountIn, levelGate, LevelStats, noiseFloor, reportedLatency } from './capture';
 
 export type Mode = 'demo' | 'microphone';
 export type { Summary };
@@ -30,6 +30,7 @@ export class KaraokeEngine {
   private inputLatency = 0;
   private noiseFloor: number | null = null;
   private speakerBleed = false;
+  private levels = new LevelStats();
   private chart;
   private tracker;
   private deviceId;
@@ -49,15 +50,26 @@ export class KaraokeEngine {
     this.deviceId = options.deviceId || '';
   }
 
-  /** Runs once as the count-in ends: settles the delay, the silence gate and the speaker check for this take. */
+  /** Runs once as the count-in ends: settles the delay and the speaker check for this take. */
   private calibrate() {
     this.calibrated = true;
     this.reportedLatencyMs = reportedLatency(this.context!, this.inputLatency);
     if (this.automaticOffset) this.offsetMs = Math.max(0, Math.min(300, Math.round((this.reportedLatencyMs || 0) / 10) * 10));
     this.noiseFloor = noiseFloor(this.warmup);
     this.speakerBleed = hearsCountIn(this.warmup, this.origin);
-    this.tracker.gate = levelGate(this.noiseFloor, this.speakerBleed);
     this.warmup = [];
+  }
+
+  /** The silence gate this take's own levels call for; the default until there is enough of it to judge. */
+  private gate(enough: number) {
+    return this.levels.count >= enough ? levelGate(this.levels.idle, this.levels.voice, this.speakerBleed) : LEVEL_GATE;
+  }
+
+  /** The live score follows a gate that is still settling. The result replays every reading with the final one, so the first seconds are judged like the rest. */
+  private conclude(): Summary {
+    const tracker = new ScoreTracker(this.chart, this.tracker.difficulty, this.gate(47));
+    for (const reading of this.readings) tracker.sample(reading.time - this.offsetMs / 1000, reading.span, reading.frequency, reading.confidence, reading.rms);
+    return tracker.summary(this.track.duration);
   }
 
   /** A null offset uses the delay the device reports instead of a value the singer chose. */
@@ -84,6 +96,7 @@ export class KaraokeEngine {
           const time = data.time - this.origin;
           this.latest = data;
           if (time > -1) this.readings.push({ time, span: data.span, frequency: data.frequency, confidence: data.confidence, rms: data.rms });
+          if (time >= 0) { this.levels.add(data.rms); if (this.levels.count % 47 === 0) this.tracker.gate = this.gate(470); }
           this.tracker.sample(time - this.offsetMs / 1000, data.span, data.frequency, data.confidence, data.rms);
         }, device => { this.inputLatency = device.latency || 0; onDevice(device); }, message => { this.stop(); onError(message); });
         if (!ready || this.disposed) return;
@@ -108,11 +121,12 @@ export class KaraokeEngine {
           this.lastDemoTime = time;
         }
         if (time >= this.track.duration + (mode === 'microphone' ? this.offsetMs / 1000 + 0.1 : 0)) {
-          const result: Summary = this.tracker.summary(this.track.duration);
+          const result: Summary = mode === 'microphone' ? this.conclude() : this.tracker.summary(this.track.duration);
           if (mode === 'microphone') result.capture = {
             offsetMs: this.offsetMs, automaticOffset: this.automaticOffset, reportedLatencyMs: this.reportedLatencyMs, noiseFloor: this.noiseFloor, speakerBleed: this.speakerBleed,
+            restingLevel: this.levels.idle, voiceLevel: this.levels.voice,
             // Leaked music follows the track, not the singer, so it says nothing about the delay.
-            suggestion: this.chart.length && !this.speakerBleed ? estimateOffset(this.chart, this.readings, this.offsetMs, this.tracker.difficulty, this.tracker.gate) : null,
+            suggestion: this.chart.length && !this.speakerBleed ? estimateOffset(this.chart, this.readings, this.offsetMs, this.tracker.difficulty, result.levelGate) : null,
             readings: this.readings.filter(reading => reading.time >= 0),
           };
           this.stop();

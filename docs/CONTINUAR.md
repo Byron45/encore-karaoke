@@ -1,6 +1,18 @@
-# Punto de continuación · revisión 2G terminada
+# Punto de continuación · revisión 2H terminada
 
-## Última revisión: calibración con voz real
+## Última revisión: fuga de los auriculares y notas sin letra
+
+9 de octubre de 2026. Segunda prueba del usuario, «Un Millón de Primaveras» (Vicente Fernández), 3.915 puntos, ya con el trazo en el resultado. Observó que en los interludios puntuaba sin cantar. Causas confirmadas con el trazo: la música de los auriculares se cuela en su micrófono a 0,004–0,009 de nivel y el umbral de la revisión 2F (0,0054) la dejaba pasar; y el mapa automático tenía 51 notas en la introducción y el interludio.
+
+Revisión 2H: el umbral de silencio sale del nivel en reposo y del nivel de la voz de la propia toma (`LevelStats`, `levelGate` en `src/capture.ts`) y el resultado se vuelve a puntuar con el umbral definitivo; con letra con tiempos, las notas automáticas fuera de las líneas cantadas no se evalúan (`sungNotes` en `src/library-model.ts`). El resultado incluye el mapa cantado (`reference.chart`). Detalle y medidas en `docs/NOTAS-TECNICAS.md`.
+
+Diagnóstico de la puntuación baja, medido contra el mapa y contra la voz original aislada: el usuario está en la nota entre el 28 % y el 36 % del tiempo y canta hacia grave (mediana −51 cents). Es una diferencia real de afinación, no un fallo de medida. La escala además es dura: la voz original obtiene 6.845 y 8.432 en las dos canciones probadas.
+
+Para repetir el análisis de una toma: `scripts/audio/prepare.py` sobre el MP3 original genera la voz aislada y el mapa; los scripts usados quedaron fuera del repositorio.
+
+Pendiente de decidir con el usuario: mostrar la puntuación respecto a la voz original; transponer el acompañamiento para cantar en un tono cómodo; probar un modelo de separación pensado para la voz (hay que descargarlo); monitor de la propia voz.
+
+## Revisión 2G: calibración con voz real
 
 9 de octubre de 2026. El usuario cantó «Luz de Día» con auriculares HyperX Cloud Stinger (entrada «Micrófono (Realtek(R) Audio)»), exigencia Normal, voz al 25 %, retraso automático de 60 ms: 4.001 puntos, cobertura 73 %, afinación 55 %, error 121 cents. La captura funcionó: señal 100 %, sin altavoces, ruido de fondo 0,0022.
 
