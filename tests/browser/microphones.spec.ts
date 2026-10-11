@@ -107,7 +107,8 @@ test('full synthetic singing through the microphone pipeline gives nonzero per-p
   expect(result.analyzedCoverage).toBeGreaterThan(95);
   expect(result.coverage).toBeGreaterThan(80);
   expect(result.version).toBe(4);
-  expect(result.difficulty).toBe('normal');
+  expect(result.difficulty).toBe('relaxed');
+  expect(result.rawScore).toBeLessThan(result.score); expect(result.ceiling).toBe(.85);
   expect(result.capture.automaticOffset).toBe(true);
   expect(result.capture.speakerBleed).toBe(false);
   expect(result.phraseDiagnostics).toHaveLength(result.phrases.length);

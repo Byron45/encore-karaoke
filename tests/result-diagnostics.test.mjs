@@ -50,7 +50,8 @@ test('mixed causes and opposite pitch errors survive aggregation and JSON export
   assert.equal(phrase.meanSignedCents, 0); assert.equal(phrase.meanAbsoluteCents, 200);
   const document = JSON.parse(JSON.stringify(resultDocument(summary, 'microphone', session, track)));
   assert.equal(document.version, 4); assert.deepEqual(document.phraseDiagnostics, [phrase]);
-  assert.equal(document.scoringVersion, 'encore-intonation-3'); assert.equal(document.difficulty, 'strict');
+  assert.equal(document.scoringVersion, 'encore-intonation-4'); assert.equal(document.difficulty, 'strict');
+  assert.equal(document.rawScore, document.score); assert.equal(document.ceiling, 1);
   assert.deepEqual(document.feedback, performanceFeedback(summary));
   assert.equal(document.reference.audioDuration, 5); assert.equal(document.reference.mappedSeconds, 1);
   assert.equal(document.audio, undefined); assert.equal(document.recording, undefined);

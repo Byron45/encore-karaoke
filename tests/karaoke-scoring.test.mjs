@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ScoreTracker, DIFFICULTIES, encodeTrace, estimateOffset, performanceFeedback, pitchQuality } from '../src/scoring.ts';
+import { ScoreTracker, DIFFICULTIES, VOICE_CEILING, encodeTrace, estimateOffset, performanceFeedback, pitchQuality } from '../src/scoring.ts';
 import { resultDocument } from '../src/result.ts';
 import { hearsCountIn, levelGate, LevelStats, LOUD_LEVEL_GATE, noiseFloor, reportedLatency } from '../src/capture.ts';
 import { phrasesOf, playable, sungNotes, validateNotes } from '../src/library-model.ts';
@@ -24,8 +24,27 @@ function sing(chart, difficulty, voice, { latency = 0, rms = .1, gate } = {}) {
   }
   return { summary: tracker.summary(end), readings };
 }
-const score = (...args) => sing(...args).summary.score;
+// The rules are checked on the theoretical maximum; the scale a singer sees has its own test.
+const score = (...args) => sing(...args).summary.rawScore;
 const written = note => note.midi;
+
+test('the sung difficulties are scaled to what a real voice can reach; strict stays on the theoretical maximum', () => {
+  // A voice with pitch 80 % of the time, in tune: every fifth reading is a consonant.
+  const voiced = difficulty => { const tracker = new ScoreTracker(song.notes, difficulty); let i = 0; for (let time = 0; time < 32; time += HOP) { const note = noteAt(song.notes, time), sung = note && i++ % 5; tracker.sample(time, HOP, sung ? frequencyOf(note.midi) : null, 1, sung ? .1 : 0); } return tracker.summary(32); };
+  for (const difficulty of ['relaxed', 'normal']) {
+    const summary = voiced(difficulty);
+    assert.equal(summary.ceiling, VOICE_CEILING); assert.ok(summary.rawScore > 7700 && summary.rawScore < 8100, `raw ${summary.rawScore}`);
+    assert.ok(Math.abs(summary.score - summary.rawScore / VOICE_CEILING) <= 1, `${summary.score} from ${summary.rawScore}`);
+    assert.equal(summary.intonation, 100); assert.ok(summary.coverage >= 78 && summary.coverage <= 81, 'what was measured is not scaled');
+    assert.ok(summary.phrases.every(value => value >= 90 && value <= 96), `phrases ${summary.phrases}`);
+  }
+  const strict = voiced('strict');
+  assert.equal(strict.ceiling, 1); assert.equal(strict.score, strict.rawScore);
+  // Nothing goes past the top, and nothing sung wrong is lifted off the bottom.
+  assert.equal(sing(song.notes, 'normal', written).summary.score, 10000);
+  assert.equal(sing(song.notes, 'relaxed', note => note.midi + 6).summary.score, 0);
+  assert.equal(sing(song.notes, 'normal', () => null).summary.score, 0);
+});
 
 test('folded difficulties credit any octave; strict keeps the octave exact', () => {
   for (const octave of [-24, -12, 12]) {
@@ -53,8 +72,8 @@ test('each difficulty has its own tolerance and a wrong note earns nothing in an
 test('strict is the previous scoring rule and the default of the tracker', () => {
   const voice = (note, time) => note.midi + .6 * Math.sin(time * 3);
   assert.deepEqual(sing(song.notes, undefined, voice).summary, sing(song.notes, 'strict', voice).summary);
-  assert.equal(new ScoreTracker(song.notes).summary(0).scoringVersion, 'encore-intonation-3');
-  assert.deepEqual(DIFFICULTIES.strict, { label: 'Estricta', full: 35, zero: 100, foldOctaves: false, nominal: false, timing: 0 });
+  assert.equal(new ScoreTracker(song.notes).summary(0).scoringVersion, 'encore-intonation-4');
+  assert.deepEqual(DIFFICULTIES.strict, { label: 'Estricta', full: 35, zero: 100, foldOctaves: false, nominal: false, timing: 0, ceiling: 1 });
 });
 
 // Back-to-back short notes, the shape automatic maps take: nothing but timing separates one from the next.
@@ -115,14 +134,24 @@ test('an unordered chart scores the same as the ordered one', () => {
 const quick = Array.from({ length: 40 }, (_, i) => ({ start: 1 + i * .45, duration: .22, midi: 60 + [0, 2, 4, 5, 7][i % 5], phrase: Math.floor(i / 8), word: 'la' }));
 
 test('a delayed performance yields the delay that explains it, and nothing when there is no clear gain', () => {
+  // Strict has no timing allowance, so every delay costs and the estimate is exact.
   for (const latency of [.08, .12, .2]) {
-    const { summary, readings } = sing(quick, 'normal', written, { latency });
-    const estimate = estimateOffset(quick, readings, 0, 'normal');
+    const { summary, readings } = sing(quick, 'strict', written, { latency });
+    const estimate = estimateOffset(quick, readings, 0, 'strict');
     assert.ok(estimate, `${latency} s must be noticed`);
     assert.ok(Math.abs(estimate.offsetMs - latency * 1000) <= 20, `${latency}: ${estimate.offsetMs}`);
     assert.ok(estimate.score > 9000 && estimate.score > summary.score + 1500);
     // With that delay already applied there is nothing left to propose.
-    assert.equal(estimateOffset(quick, readings, estimate.offsetMs, 'normal'), null);
+    assert.equal(estimateOffset(quick, readings, estimate.offsetMs, 'strict'), null);
+  }
+  // The sung difficulties forgive a short delay themselves; one past their allowance is still found, and found exactly,
+  // because the fit is judged before the scale flattens the top.
+  for (const difficulty of ['normal', 'relaxed']) {
+    const late = sing(quick, difficulty, written, { latency: .25 }), estimate = estimateOffset(quick, late.readings, 0, difficulty);
+    assert.ok(estimate, `${difficulty} must notice 250 ms`);
+    assert.ok(Math.abs(estimate.offsetMs - 250) <= 20, `${difficulty}: ${estimate.offsetMs}`);
+    assert.ok(estimate.score > late.summary.score + 1500, `${difficulty}: ${late.summary.score} → ${estimate.score}`);
+    assert.equal(estimateOffset(quick, late.readings, estimate.offsetMs, difficulty), null);
   }
   assert.equal(estimateOffset(quick, sing(quick, 'normal', written).readings, 0, 'normal'), null);
   assert.equal(estimateOffset(quick, sing(quick, 'normal', note => note.midi + 6).readings, 0, 'normal'), null);
@@ -249,7 +278,31 @@ test('leaked music is named as the cause instead of blaming the singer', () => {
   const poor = sing(song.notes, 'strict', note => note.midi - 12).summary;
   assert.match(performanceFeedback({ ...poor, capture: { speakerBleed: true } }).title, /música de los altavoces/);
   const fine = sing(song.notes, 'normal', written).summary;
-  assert.match(performanceFeedback({ ...fine, capture: { speakerBleed: true } }).title, /Cada intento cuenta/);
+  assert.match(performanceFeedback({ ...fine, capture: { speakerBleed: true } }).title, /Gran interpretación/);
+});
+
+test('the result says how the take went and, when the voice leans one way, which way', () => {
+  // Every third note a tone and a half away, the rest in tune but leaning by `cents`.
+  const take = (cents, wrong = 0) => sing(song.notes, 'normal', note => note.midi + (wrong && song.notes.indexOf(note) % wrong === 0 ? 3 : cents / 100)).summary;
+  assert.equal(performanceFeedback(take(0)).title, '¡Gran interpretación!');
+  assert.doesNotMatch(performanceFeedback(take(0)).detail, /cents/);
+  // One note in three wrong, then one in two: the headline follows the score a singer sees.
+  assert.equal(performanceFeedback(take(0, 3)).title, 'Muy bien cantada.');
+  assert.equal(performanceFeedback(take(0, 2)).title, 'Buen intento.');
+  const halfHearted = { ...take(0), score: 4500, intonation: 55, coverage: 70 };
+  assert.equal(performanceFeedback(halfHearted).title, 'Cada intento cuenta.');
+  // A steady lean is named, with the direction to move in.
+  const flat = performanceFeedback(take(-70)), sharp = performanceFeedback(take(80));
+  assert.match(flat.detail, /70 cents más grave/); assert.match(flat.detail, /subir un poco/); assert.match(flat.detail, /oído libre/);
+  assert.match(sharp.detail, /80 cents más agudo/); assert.match(sharp.detail, /bajar un poco/);
+  // Low and leaning: that is the headline.
+  const low = performanceFeedback(take(-120), 0, true, true);
+  assert.equal(low.title, 'Cantaste por debajo de la nota.'); assert.match(low.detail, /120 cents más grave/); assert.match(low.detail, /Ver trazo/); assert.match(low.detail, /mapa es automático/);
+  assert.equal(performanceFeedback(take(125)).title, 'Cantaste por encima de la nota.');
+  // Too far to be a lean, or errors both ways: no direction is claimed.
+  assert.equal(performanceFeedback(take(300)).title, 'El tono detectado tuvo poca coincidencia con la referencia.');
+  const mixed = sing(song.notes, 'normal', note => note.midi + (song.notes.indexOf(note) % 2 ? .9 : -.9)).summary;
+  assert.doesNotMatch(performanceFeedback(mixed).detail, /más grave|más agudo/);
 });
 
 test('the downloaded result carries the pitch trace as compact text and never the readings or any audio', () => {

@@ -3,8 +3,10 @@ import type { Difficulty } from './scoring';
 
 const difficultyKey = 'encore.difficulty.v1', offsetKey = 'encore.offset.v1';
 
+// Singing for fun starts on the forgiving level; the tighter ones are a choice.
+export const DEFAULT_DIFFICULTY: Difficulty = 'relaxed';
 export function savedDifficulty(): Difficulty {
-  try { const value = localStorage.getItem(difficultyKey); return value && value in DIFFICULTIES ? value as Difficulty : 'normal'; } catch { return 'normal'; }
+  try { const value = localStorage.getItem(difficultyKey); return value && value in DIFFICULTIES ? value as Difficulty : DEFAULT_DIFFICULTY; } catch { return DEFAULT_DIFFICULTY; }
 }
 export function storeDifficulty(value: Difficulty) {
   try { localStorage.setItem(difficultyKey, value); } catch { /* The choice still applies to this visit. */ }

@@ -19,6 +19,9 @@ test('live tuner shows signed cents and Hz, rejects silence and follows capture 
   await expect.poll(async () => Number(await meter.getAttribute('aria-valuenow'))).toBeGreaterThan(45);
   await expect(page.getByLabel('Afinador en vivo')).toContainText('Hz');
   await expect(page.locator('.stage-feedback')).toContainText('Baja un poco el tono');
+  // Half a semitone over Do4 is close but not in the note: the voice is drawn in the colour of that credit.
+  await expect.poll(() => page.locator('.voice-dot').getAttribute('data-credit'), { timeout: 8000 }).toBe('near');
+  await expect(page.locator('.pitch-legend')).toContainText('verde en la nota');
   await page.screenshot({ path: 'artifacts/etapa-2d-afinador.png' });
   await page.evaluate(() => { (window as any).tunerMic.gain.gain.value = 0; });
   await expect(page.getByLabel('Afinador en vivo')).toContainText('Esperando tono claro');

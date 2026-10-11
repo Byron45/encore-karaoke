@@ -46,7 +46,7 @@ export class KaraokeEngine {
     if (this.accompaniment !== 'original' && !this.track.prepared) throw new Error('Prepara las pistas en la biblioteca antes de elegir este acompañamiento.');
     if (this.track.audio && options.transpose) throw new Error('Los archivos importados se cantan en su registro original en esta etapa.');
     this.chart = this.track.notes.map(note => ({ ...note, midi: note.midi + (options.transpose || 0) }));
-    this.tracker = new ScoreTracker(this.chart, options.difficulty || 'normal');
+    this.tracker = new ScoreTracker(this.chart, options.difficulty || 'relaxed');
     this.deviceId = options.deviceId || '';
   }
 

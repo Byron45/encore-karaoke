@@ -152,6 +152,35 @@ La voz original de esa canción obtiene 6.845 puntos contra su mapa (8.432 en «
 
 El resultado descargado incluye ahora el mapa tal como se cantó (`reference.chart`), el nivel en reposo y el de la voz.
 
+## Escala para una voz real y nivel por defecto · revisión 2I
+
+Con la fuga y las notas sin letra resueltas, las puntuaciones seguían siendo bajas. La calibración se hizo con la herramienta `scripts/analyze-take.mjs` (nueva en el repositorio) sobre la toma de «Un Millón de Primaveras», su voz original aislada y la de «Luz de Día». Puntos sobre el máximo teórico, sin ajustar:
+
+| Regla | Voz original (Luz de Día) | Voz original (Primaveras) | La toma | Otra parte de la canción | Mejor nota fija | Notas al azar |
+| --- | --- | --- | --- | --- | --- | --- |
+| Estricta | 6.387 | 5.283 | 2.145 | 236 | 1.514 | 513 |
+| Normal, ±50 / 150 | 8.423 | 6.845 | 3.818 | 770 | 2.751 | 1.831 |
+| Relajada, ±100 / 200 | 8.454 | 6.875 | 4.848 | 1.117 | 4.317 | 2.687 |
+| ±200 / 300 | 8.471 | 6.884 | 5.939 | 1.649 | 5.654 | 3.606 |
+
+Las tres últimas columnas usan los instantes con tono de la propia toma, con otras alturas. Dos decisiones salen de aquí.
+
+**Escala.** Ni la voz original pasa de 8.450 sobre el máximo teórico con una pista limpia: su cobertura es del 88 %, porque consonantes y respiraciones no tienen tono. En Relajada y Normal, 10.000 puntos equivalen ahora al 85 % del máximo teórico (`VOICE_CEILING`). Se ajustan la puntuación, el porcentaje combinado y el de cada frase; la cobertura y la afinación siguen siendo medidas sin ajustar, y el resultado conserva `rawScore`. Estricta no se ajusta, para seguir siendo la regla de `encore-intonation-2`. La versión pasa a `encore-intonation-4`.
+
+Se descartó medir el techo canción por canción con su voz aislada, que era la propuesta inicial. En «Un Millón de Primaveras» esa pista conserva mucho bajo y el detector de la app la lee mal (cobertura del 74 %): el techo medido sería 0,68 y subiría la puntuación un 25 % más por un defecto de la separación, no del canto. El mapa, hecho con CREPE, no tiene ese problema.
+
+**Nivel por defecto.** Pasa a ser Relajada: un semitono de margen, como el nivel medio de los juegos de karaoke. Quien ya había elegido un nivel lo conserva. El coste se ve en la tabla: una sola nota bien elegida llega a 4.317 sin ajustar (5.079 ajustada) frente a 4.848 (5.703) de la toma real. Normal separa mejor, 3.818 frente a 2.751. No se adoptó un margen mayor (±200 / 300) porque la nota fija casi iguala a la toma.
+
+**Qué dice el resultado.** El titular sigue la puntuación (8.500, 7.000 y 5.500 separan «¡Gran interpretación!», «Muy bien cantada.», «Buen intento.» y «Cada intento cuenta.»). Cuando la desviación media tiene un sentido claro —entre 40 y 150 cents y al menos el 40 % de la desviación absoluta— el texto lo dice y hacia dónde corregir; si además la afinación no llega al 50 %, ese es el titular.
+
+**En vivo.** El punto de la voz en el escenario toma el color del crédito que está ganando (verde, ámbar, rojo), el mismo código que «Ver trazo».
+
+**La propuesta de retraso** elige el desfase por el crédito sin ajustar, porque la escala se aplana al llegar a 10.000, y decide si proponerlo por la ganancia en puntos ajustados.
+
+Efecto sobre la toma analizada: 3.915 puntos como se cantó, 5.703 con estas reglas. La interpretación es la misma: en la nota un 28 % del tiempo y hasta un semitono un 49 %.
+
+El 27 % de las notas sin tono detectado en esa toma se reparte así: 12 % de sonido sin tono (consonantes, aire) y 15 % por debajo del umbral, es decir, sin cantar. De 343 notas, 50 quedaron sin cantar, en 63 la voz entró tarde (mediana de 78 ms) y en 29 se soltó antes del final. No es un fallo de detección.
+
 ## Letras completas y canto libre
 
 La revisión **2E** mejora la explicación de resultados: distingue cobertura parcial de afinación y muestra diagnóstico por frase. La descarga JSON (versión 4 desde la revisión 2F) incluye tiempos, señal, tono y errores por frase junto con el texto de retroalimentación, datos básicos de la referencia, la exigencia y lo medido en la captura (`capture`: retraso aplicado, ruido de fondo, altavoces y propuesta). El promedio firmado puede compensar desviaciones graves/agudas; no sustituye al error absoluto. Detalles y análisis de una prueba real en `docs/EVALUACION-02E.md`.

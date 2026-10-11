@@ -2,14 +2,19 @@ import { midiOf } from './song.ts';
 import type { Note } from './song.ts';
 import { evaluationWindow, LEVEL_GATE, pitchError, referenceMidiAt, reliablePitch } from './pitch-reference.ts';
 
-export const SCORING_VERSION = 'encore-intonation-3';
+export const SCORING_VERSION = 'encore-intonation-4';
+
+// A sung voice has no pitch in its consonants and breaths. The isolated voice of a recording, scored against its own map,
+// earns about this share of the theoretical maximum; the scale of the sung difficulties ends there, not at an oscillator's 100 %.
+export const VOICE_CEILING = .85;
 
 export type Difficulty = 'relaxed' | 'normal' | 'strict';
-// Cents of full and of zero credit, and seconds a note may be early or late. Strict is the tuner-like rule of encore-intonation-2: exact octave and instant, following the recorded curve.
-export const DIFFICULTIES: Record<Difficulty, { label: string; full: number; zero: number; foldOctaves: boolean; nominal: boolean; timing: number }> = {
-  relaxed: { label: 'Relajada', full: 100, zero: 200, foldOctaves: true, nominal: true, timing: .16 },
-  normal: { label: 'Normal', full: 50, zero: 150, foldOctaves: true, nominal: true, timing: .12 },
-  strict: { label: 'Estricta', full: 35, zero: 100, foldOctaves: false, nominal: false, timing: 0 },
+// Cents of full and of zero credit, seconds a note may be early or late, and the share of the theoretical maximum that counts as 10,000.
+// Strict is the tuner-like rule of encore-intonation-2: exact octave and instant, following the recorded curve, on the unscaled maximum.
+export const DIFFICULTIES: Record<Difficulty, { label: string; full: number; zero: number; foldOctaves: boolean; nominal: boolean; timing: number; ceiling: number }> = {
+  relaxed: { label: 'Relajada', full: 100, zero: 200, foldOctaves: true, nominal: true, timing: .16, ceiling: VOICE_CEILING },
+  normal: { label: 'Normal', full: 50, zero: 150, foldOctaves: true, nominal: true, timing: .12, ceiling: VOICE_CEILING },
+  strict: { label: 'Estricta', full: 35, zero: 100, foldOctaves: false, nominal: false, timing: 0, ceiling: 1 },
 };
 const credit = (cents: number, difficulty: Difficulty) => Math.max(0, Math.min(1, (DIFFICULTIES[difficulty].zero - cents) / (DIFFICULTIES[difficulty].zero - DIFFICULTIES[difficulty].full)));
 
@@ -126,6 +131,8 @@ export class ScoreTracker {
     const total = this.windows.reduce((sum, window) => sum + window.duration, 0);
     const earned = this.earned.reduce((sum, value) => sum + value, 0);
     const voiced = this.voiced.reduce((sum, value) => sum + value, 0);
+    // Credit as a share of what a real voice can reach under this difficulty.
+    const ceiling = DIFFICULTIES[this.difficulty].ceiling, reached = (credit: number, reference: number) => reference ? Math.min(1, credit / reference / ceiling) : 0;
     const phraseDiagnostics = this.phraseGroups.map(({ phrase, indices }) => {
       const sum = (values: number[]) => indices.reduce((value, i) => value + values[i], 0);
       const reference = indices.reduce((value, i) => value + this.windows[i].duration, 0);
@@ -139,7 +146,7 @@ export class ScoreTracker {
         sungSeconds: Math.round(sung * 1000) / 1000,
         analyzedSeconds: Math.round(sum(this.analyzed) * 1000) / 1000,
         signalSeconds: Math.round(sum(this.signal) * 1000) / 1000,
-        accuracy: percent(credit, reference), coverage: percent(sung, elapsed),
+        accuracy: Math.round(reached(credit, reference) * 100), coverage: percent(sung, elapsed),
         analyzedCoverage: percent(sum(this.analyzed), elapsed), signalCoverage: percent(sum(this.signal), elapsed),
         intonation: sung ? percent(credit, sung) : null,
         meanAbsoluteCents: sung ? Math.round(sum(this.noteAbsoluteCents) / sung) : null,
@@ -160,8 +167,10 @@ export class ScoreTracker {
       intonation: voiced ? Math.round(Math.min(1, earned / voiced) * 100) : null,
       meanAbsoluteCents: voiced ? Math.round(this.absoluteCents / voiced) : null,
       meanSignedCents: voiced ? Math.round(this.signedCents / voiced) || 0 : null,
-      score: total ? Math.round(Math.min(1, earned / total) * 10000) : 0,
-      accuracy: available ? Math.round(Math.min(1, earned / available) * 100) : 0,
+      score: Math.round(reached(earned, total) * 10000),
+      // The same credit on the theoretical maximum, for comparing takes scored on different scales.
+      rawScore: total ? Math.round(Math.min(1, earned / total) * 10000) : 0, ceiling,
+      accuracy: Math.round(reached(earned, available) * 100),
       coverage: available ? Math.round(Math.min(1, this.voiced.reduce((a, b) => a + b, 0) / available) * 100) : 0,
       analyzedCoverage: available ? Math.round(Math.min(1, this.analyzed.reduce((a, b) => a + b, 0) / available) * 100) : 0,
       signalCoverage: available ? Math.round(Math.min(1, this.signal.reduce((a, b) => a + b, 0) / available) * 100) : 0,
@@ -179,13 +188,15 @@ export function estimateOffset(chart: Note[], readings: Reading[], appliedMs: nu
   const scoreAt = (ms: number) => {
     const tracker = new ScoreTracker(chart, difficulty, gate);
     for (const reading of readings) tracker.sample(reading.time - ms / 1000, reading.span, reading.frequency, reading.confidence, reading.rms);
-    return tracker.summary(Infinity).score;
+    const { score, rawScore } = tracker.summary(Infinity);
+    return { offsetMs: ms, score, rawScore };
   };
   const current = scoreAt(appliedMs);
-  let best = { offsetMs: appliedMs, score: current };
-  for (let ms = 0; ms <= 300; ms += 10) { const score = scoreAt(ms); if (score > best.score) best = { offsetMs: ms, score }; }
+  // The delay is the one that fits best on the unscaled credit: the scale flattens once a take reaches its top.
+  let best = current;
+  for (let ms = 0; ms <= 300; ms += 10) { const candidate = scoreAt(ms); if (candidate.rawScore > best.rawScore) best = candidate; }
   // A chance alignment of wrong notes moves a low score a little; a real delay recovers a large share of it.
-  return Math.abs(best.offsetMs - appliedMs) >= 30 && best.score >= 1500 && best.score - current >= Math.max(500, current * .1) ? best : null;
+  return Math.abs(best.offsetMs - appliedMs) >= 30 && best.score >= 1500 && best.score - current.score >= Math.max(500, current.score * .1) ? { offsetMs: best.offsetMs, score: best.score } : null;
 }
 
 export function performanceFeedback(summary: Summary, transpose = 0, canTranspose = true, experimentalMap = false) {
@@ -200,8 +211,16 @@ export function performanceFeedback(summary: Summary, transpose = 0, canTranspos
   if (!canTranspose && (lower || upper)) return { title: 'Tu tono estuvo en otra octava del mapa.', detail: 'Elige la exigencia Normal o Relajada para cantar en la octava que te resulte cómoda, o comprueba en la biblioteca que las notas representan la voz que quieres cantar.' };
   if (lower) return { title: 'Tu tono estuvo una octava más grave.', detail: transpose > -12 ? `Se detectaron notas parecidas a la melodía, una octava por debajo. Prueba el registro ${transpose === 12 ? 'Original' : 'Grave'}: bajará la guía y las notas que evaluamos.` : 'La voz quedó por debajo del registro Grave, que es el mínimo de este ejercicio. Comprueba el micrófono y prueba a seguir la guía en una altura cómoda; todavía no hay un registro inferior.' };
   if (upper) return { title: 'Tu tono estuvo una octava más agudo.', detail: transpose < 12 ? `Se detectaron notas parecidas a la melodía, una octava por encima. Prueba el registro ${transpose === -12 ? 'Original' : 'Agudo'}: subirá la guía y las notas que evaluamos.` : 'La voz quedó por encima del registro Agudo, que es el máximo de este ejercicio. Comprueba el micrófono y prueba a seguir la guía; todavía no hay un registro superior.' };
-  if (summary.intonation !== null && summary.intonation < 50) return { title: 'El tono detectado tuvo poca coincidencia con la referencia.', detail: `La afinación durante el tono evaluable fue del ${summary.intonation}%. Compara tu tono con el afinador y revisa la sincronización.${experimentalMap ? ' Revisa la voz aislada y el mapa automático antes de concluir que la diferencia procede de tu canto.' : ''}` };
-  return { title: 'Cada intento cuenta.', detail: 'Esta evaluación combina afinación y tiempo cantado. Las palabras aún no se califican.' };
+  // A steady lean of up to a semitone and a half is the singer sitting under or over the notes; further off, it is other notes.
+  const lean = summary.meanSignedCents ?? 0, off = Math.abs(lean);
+  const leaning = off >= 40 && off <= 150 && off >= .4 * (summary.meanAbsoluteCents ?? 0);
+  const advice = leaning ? ` De media cantaste ${off} cents más ${lean < 0 ? 'grave' : 'agudo'} que la referencia (100 cents son un semitono). ${lean < 0 ? 'Prueba a subir un poco el tono; dejar un oído libre ayuda a oírte.' : 'Prueba a bajar un poco el tono.'}` : '';
+  if (summary.intonation !== null && summary.intonation < 50) return leaning
+    ? { title: lean < 0 ? 'Cantaste por debajo de la nota.' : 'Cantaste por encima de la nota.', detail: `La afinación durante el tono evaluable fue del ${summary.intonation}%.${advice} En cada frase, Ver trazo muestra dónde.${experimentalMap ? ' El mapa es automático: si el trazo va paralelo a las barras, la diferencia es de afinación; si no se parecen, revisa el mapa.' : ''}` }
+    : { title: 'El tono detectado tuvo poca coincidencia con la referencia.', detail: `La afinación durante el tono evaluable fue del ${summary.intonation}%. Compara tu tono con el afinador y revisa la sincronización.${experimentalMap ? ' Revisa la voz aislada y el mapa automático antes de concluir que la diferencia procede de tu canto.' : ''}` };
+  // A single held note can reach about 5,000 on a melody that moves little: a good try starts above that.
+  const title = summary.score >= 8500 ? '¡Gran interpretación!' : summary.score >= 7000 ? 'Muy bien cantada.' : summary.score >= 5500 ? 'Buen intento.' : 'Cada intento cuenta.';
+  return { title, detail: `Esta evaluación combina afinación y tiempo cantado. Las palabras aún no se califican.${advice}` };
 }
 
 export function phraseFeedback(phrase: Summary['phraseDiagnostics'][number]) {

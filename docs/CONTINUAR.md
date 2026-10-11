@@ -1,6 +1,14 @@
-# Punto de continuación · revisión 2H terminada
+# Punto de continuación · revisión 2I terminada
 
-## Última revisión: fuga de los auriculares y notas sin letra
+## Última revisión: escala para una voz real y nivel por defecto
+
+11 de octubre de 2026. El usuario indicó que las puntuaciones seguían bajas y dejó las medidas a criterio del asistente. Revisión 2I: en Relajada y Normal, 10.000 puntos equivalen al 85 % del máximo teórico (lo que alcanza la voz original de una grabación); el nivel por defecto pasa a Relajada; el resultado dice cómo fue la toma y, si la voz se inclina hacia grave o agudo, hacia dónde corregir. La toma de «Un Millón de Primaveras» pasa de 3.915 a 5.703 puntos con la misma interpretación. Medidas y decisiones en `docs/NOTAS-TECNICAS.md`.
+
+`scripts/analyze-take.mjs` analiza un resultado descargado y, con la carpeta de `prepare.py`, lo compara con la voz original. Las pistas de las dos canciones probadas están en `artifacts/audio-luz-de-dia` y `artifacts/audio-un-millon-de-primaveras` (fuera del repositorio; se regeneran con `prepare.py` desde los MP3 de `C:\Users\ASUS\Music`).
+
+Lo que queda es afinación real del cantante (en la nota un 28 % del tiempo, inclinado hacia grave) y calidad de la separación. Pendiente: probar un modelo de separación pensado para la voz (requiere descargarlo y el permiso del usuario); transponer el acompañamiento.
+
+## Revisión 2H: fuga de los auriculares y notas sin letra
 
 9 de octubre de 2026. Segunda prueba del usuario, «Un Millón de Primaveras» (Vicente Fernández), 3.915 puntos, ya con el trazo en el resultado. Observó que en los interludios puntuaba sin cantar. Causas confirmadas con el trazo: la música de los auriculares se cuela en su micrófono a 0,004–0,009 de nivel y el umbral de la revisión 2F (0,0054) la dejaba pasar; y el mapa automático tenía 51 notas en la introducción y el interludio.
 

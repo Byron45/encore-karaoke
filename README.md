@@ -8,7 +8,7 @@ Karaoke para practicar con tu propia música. Encore escucha tu voz por el micr�
 
 ## Características
 
-- **Escenario de canto** con barras de notas, letra sincronizada, afinador en vivo (en cents) y puntuación sobre 10.000.
+- **Escenario de canto** con barras de notas, letra sincronizada, afinador en vivo (en cents) y puntuación sobre 10.000. El punto de tu voz cambia de color mientras cantas: verde en la nota, ámbar cerca, rojo fuera.
 - **Tres niveles de exigencia.** En Relajada y Normal cuenta la nota y no su altura: puedes cantar en la octava que te resulte cómoda.
 - **Biblioteca propia.** Importa MP3, WAV, OGG, M4A, FLAC o WebM (hasta 30 MB y 10 minutos) y guárdalos en el navegador.
 - **Editor de letra y notas.** Marca tiempos mientras escuchas, desplaza el mapa completo e importa o exporta mapas en JSON.
@@ -61,7 +61,7 @@ Con letra y sin notas también puedes cantar: la app reproduce tu audio y avanza
 
 En el panel **Prepara tu voz**:
 
-- **Exigencia de afinación** decide cuánto margen tienes (tabla siguiente).
+- **Exigencia de afinación** decide cuánto margen tienes (tabla siguiente). Empieza en Relajada.
 - **Compensar retraso** empieza en automático. Al terminar una canción, si tu voz encaja mejor con otro valor, aparece un botón para usarlo; se recuerda para ese micrófono.
 
 ## Cómo se puntúa
@@ -70,13 +70,25 @@ La puntuación mide cuánto tiempo sostienes la nota correcta. No reconoce palab
 
 | Exigencia | Crédito completo | Sin crédito desde | Octava | Margen de tiempo | Referencia |
 | --- | --- | --- | --- | --- | --- |
-| Relajada | ±100 cents (un semitono) | 200 cents | cualquiera | ±160 ms | la nota escrita o la curva original, la más cercana |
-| Normal (por defecto) | ±50 cents | 150 cents | cualquiera | ±120 ms | la nota escrita o la curva original, la más cercana |
+| Relajada (por defecto) | ±100 cents (un semitono) | 200 cents | cualquiera | ±160 ms | la nota escrita o la curva original, la más cercana |
+| Normal | ±50 cents | 150 cents | cualquiera | ±120 ms | la nota escrita o la curva original, la más cercana |
 | Estricta | ±35 cents | 100 cents | exacta | ninguno | la curva original |
 
 El margen de tiempo acepta una nota que entra un poco antes o se sostiene un poco después de lo que marca el mapa. Los silencios previstos no suman ni restan; no cantar durante una nota sí reduce el resultado. Los resultados solo son comparables entre intentos con la misma exigencia.
 
-**Qué puntuación esperar.** Una voz real no suena con tono el 100 % del tiempo: las consonantes y las respiraciones no tienen nota. Como referencia, la voz original de dos canciones, aislada y pasada por Encore contra su propio mapa automático, obtuvo 6.800 y 8.400 puntos en Normal. Cantar una nota fija o una melodía sin relación queda entre 1.000 y 3.000.
+**La escala.** Una voz real no suena con tono el 100 % del tiempo: las consonantes y las respiraciones no tienen nota. Por eso, en Relajada y Normal, 10.000 puntos equivalen al 85 % del máximo teórico, que es lo que alcanza la voz original de una grabación medida con este mismo sistema. Estricta se queda en el máximo teórico. El resultado muestra también los puntos sin ese ajuste.
+
+**Qué puntuación esperar** en Relajada, según lo medido hasta ahora (dos canciones y una toma real):
+
+| Quién canta | Puntos |
+| --- | --- |
+| La voz original aislada, contra su propio mapa | 8.100 y 9.900 |
+| Una voz sin entrenar que sigue la melodía, en la nota un tercio del tiempo | unos 5.700 |
+| Una sola nota sostenida, la que mejor encaja con la canción | hasta 5.100 |
+| Notas al azar dentro del registro | unos 3.200 |
+| La misma voz sobre otra parte de la canción | unos 1.300 |
+
+Con un semitono de margen, una nota fija bien elegida puntúa casi como una melodía cantada a medias: es el precio de una escala indulgente. Normal separa más (4.500 frente a 3.200).
 
 **Qué no se evalúa.** Si la letra tiene tiempos por línea, las notas de un mapa automático que caen fuera de las líneas cantadas (introducción, interludios) se dejan fuera; el escenario indica cuántas. Tampoco puntúa lo que tus auriculares dejan pasar a su propio micrófono: el umbral de silencio se ajusta al nivel de tu voz en cada canción.
 
@@ -108,12 +120,26 @@ El mapa generado es **experimental**: puede cubrir solo parte de la canción, eq
 ## Pruebas
 
 ```bash
-npm test             # 58 pruebas unitarias: detector, puntuación, mapas, letras, servicios
+npm test             # 60 pruebas unitarias: detector, puntuación, mapas, letras, servicios
 npm run build        # comprobación de tipos y compilación
 npm run test:browser # 40 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
 ```
 
 Las pruebas de navegador hacen pasar una voz sintética por el micrófono, el detector y la puntuación reales. No sustituyen una prueba con voz humana.
+
+### Analizar una toma real
+
+El resultado que descargas tras cantar incluye el trazo de tu afinación. Esta herramienta lo estudia: qué captó el micrófono, cuánto puntúa con cada exigencia y dónde estuvo tu voz respecto a las notas.
+
+```bash
+node scripts/analyze-take.mjs resultado.json
+```
+
+Con la carpeta que genera `scripts/audio/prepare.py` para el audio original de la canción, compara además tu voz con la voz original aislada:
+
+```bash
+node scripts/analyze-take.mjs resultado.json --prepared artifacts/audio-mi-cancion
+```
 
 ## Estructura del proyecto
 
@@ -136,7 +162,7 @@ docs/           Notas técnicas, plan por etapas y evaluaciones
 - **Hacen falta auriculares.** Sin ellos la música se mezcla con tu voz y la puntuación deja de ser fiable. La app lo detecta y avisa, pero no lo corrige.
 - **Poca validación con voz real.** Además de la señal sintética, la evaluación se ha contrastado con la voz original aislada de una canción y con una prueba cantada con auriculares con micrófono. Faltan más personas, micrófonos y auriculares Bluetooth.
 - **El mapa automático sale de la pista de voz separada**, que incluye coros, segundas voces y a veces instrumentos. En esos tramos la referencia puede no ser la melodía principal. Sin letra con tiempos, las notas de los tramos instrumentales no se pueden descartar.
-- **La escala es exigente.** Ni la voz original llega a 10.000, y una voz sin entrenar que sigue la melodía puede quedar por debajo de 5.000.
+- **La escala usa un único ajuste para todas las canciones** (85 %). Cuando la pista de voz separada sale sucia, la voz original puntúa menos contra su propio mapa (8.100 en una de las dos canciones medidas); parte de esa diferencia puede venir de notas del mapa que no son de la voz.
 - **El retraso automático es una estimación.** Parte de lo que informa el equipo, que puede no coincidir con el real; por eso existe la propuesta al terminar cada canción.
 - **El mapa automático es experimental** y suele quedar fragmentado en notas muy cortas.
 - **El audio importado no se transpone.** Se reproduce en su tono original.

@@ -55,7 +55,7 @@ async function studio(page: Page, options: { notes?: { start: number; duration: 
   }, options);
 }
 
-test('any octave counts under Normal; Estricta keeps the octave and says how to change it', async ({ page }) => {
+test('any octave counts on the level a singer starts with; Estricta keeps the octave and says how to change it', async ({ page }) => {
   await page.addInitScript(() => {
     navigator.mediaDevices.getUserMedia = async () => {
       const context = new AudioContext(); await context.resume();
@@ -66,18 +66,20 @@ test('any octave counts under Normal; Estricta keeps the octave and says how to 
     };
   });
   await importSong(page, 4, [{ start: .3, duration: 1.2, midi: 60, word: 'Hola', phrase: 0 }, { start: 2, duration: 1.5, midi: 60, word: 'voz', phrase: 1 }]);
-  await expect(page.getByRole('combobox', { name: 'Exigencia de afinación' })).toHaveValue('normal');
+  await expect(page.getByRole('combobox', { name: 'Exigencia de afinación' })).toHaveValue('relaxed');
   await page.getByRole('button', { name: 'Empezar a cantar' }).click();
   await expect(page.locator('.result-panel')).toBeVisible({ timeout: 13000 });
-  expect(await points(page)).toBeGreaterThan(8500);
-  await expect(page.locator('.result-heading h2')).not.toContainText('octava');
-  await expect(page.locator('.result-diagnostics')).toContainText('Exigencia: Normal');
+  expect(await points(page)).toBeGreaterThan(9500);
+  await expect(page.locator('.result-heading h2')).toHaveText('¡Gran interpretación!');
+  await expect(page.locator('.result-diagnostics')).toContainText('Exigencia: Relajada');
+  await expect(page.locator('.result-diagnostics')).toContainText('La escala está ajustada a una voz real');
   await page.getByRole('combobox', { name: 'Exigencia de afinación' }).selectOption('strict');
   await page.getByRole('button', { name: 'Volver a cantar' }).click();
   await expect(page.locator('.result-diagnostics')).toContainText('Exigencia: Estricta', { timeout: 13000 });
   expect(await points(page)).toBe(0);
   await expect(page.locator('.result-heading h2')).toHaveText('Tu tono estuvo en otra octava del mapa.');
   await expect(page.locator('.result-panel')).toContainText('Normal o Relajada');
+  await expect(page.locator('.result-diagnostics')).not.toContainText('La escala está ajustada');
   await page.reload();
   await expect(page.getByRole('combobox', { name: 'Exigencia de afinación' })).toHaveValue('strict');
 });
@@ -147,7 +149,7 @@ test('an automatic map with timed lyrics scores only the sung lines, and what th
   expect(result.levelGate).toBeGreaterThanOrEqual(.008);
   expect(result.phrases[0]).toBeGreaterThan(85);
   // Half of the second line was sung. The leaked guide is in the trace, and it did not score.
-  expect(result.phrases[1]).toBeGreaterThan(35); expect(result.phrases[1]).toBeLessThan(62);
+  expect(result.phrases[1]).toBeGreaterThan(40); expect(result.phrases[1]).toBeLessThan(70);
   const times = result.capture.trace.times.split(',').map(Number), pitch = result.capture.trace.pitch.split(',').map(Number);
   expect(pitch.filter((value: number, i: number) => times[i] > 9450 && times[i] < 10250 && Math.round(value / 100) === 65).length).toBeGreaterThan(10);
 });
@@ -157,10 +159,11 @@ test('with headphones nothing is announced and the count-in stays out of the sco
   await studio(page, { notes });
   await importSong(page, 4, notes);
   await page.getByRole('button', { name: 'Empezar a cantar' }).click();
+  await expect.poll(() => page.locator('.voice-dot').getAttribute('data-credit').catch(() => null), { timeout: 9000 }).toBe('hit');
   await expect(page.locator('.result-panel')).toBeVisible({ timeout: 13000 });
   await expect(page.getByText('captando la música', { exact: false })).toHaveCount(0);
-  await expect(page.locator('.result-heading h2')).toHaveText('Cada intento cuenta.');
-  expect(await points(page)).toBeGreaterThan(8500);
+  await expect(page.locator('.result-heading h2')).toHaveText('¡Gran interpretación!');
+  expect(await points(page)).toBeGreaterThan(9500);
 
   // The take can be reviewed phrase by phrase: the voice drawn over the notes it was scored against.
   await expect(page.locator('.phrase-review')).toHaveCount(0);
