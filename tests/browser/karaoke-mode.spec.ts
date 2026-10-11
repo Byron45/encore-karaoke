@@ -93,6 +93,7 @@ test('a late voice gets a delay proposal that is applied and remembered for that
   await expect(page.locator('.result-panel')).toBeVisible({ timeout: 15000 });
   const late = await points(page);
   await expect(page.locator('.result-diagnostics')).toContainText('(automática)');
+  await expect(page.locator('.result-panel .personal-best')).toContainText('Primera marca en esta canción con exigencia Relajada');
   const proposal = page.getByRole('button', { name: /^Usar \d+ ms$/ });
   await expect(proposal).toBeVisible();
   const delay = Number((await proposal.innerText()).replace(/\D/g, ''));
@@ -102,8 +103,15 @@ test('a late voice gets a delay proposal that is applied and remembered for that
   await expect(page.getByRole('slider', { name: 'Compensar retraso' })).toHaveValue(String(delay));
   await page.getByRole('button', { name: 'Volver a cantar' }).click();
   await expect(page.locator('.result-diagnostics')).toContainText(`Compensación: ${delay} ms ·`, { timeout: 15000 });
-  expect(await points(page)).toBeGreaterThan(Math.max(8500, late + 1500));
+  const better = await points(page);
+  expect(better).toBeGreaterThan(Math.max(8500, late + 1500));
   await expect(proposal).toHaveCount(0);
+  // The second take beat the first: the mark moves, says what it replaced and is kept for the next visit.
+  await expect(page.locator('.result-panel .personal-best')).toHaveText(`¡Nueva marca personal! La anterior era ${late.toLocaleString('es-EC')}.`);
+  await expect(page.locator('.score-card .personal-best')).toHaveText(`Tu mejor marca: ${better.toLocaleString('es-EC')} · Relajada`);
+  await page.getByRole('combobox', { name: 'Exigencia de afinación' }).selectOption('normal');
+  await expect(page.locator('.score-card .personal-best')).toHaveCount(0);
+  await page.getByRole('combobox', { name: 'Exigencia de afinación' }).selectOption('relaxed');
   await page.reload();
   await expect(page.getByRole('slider', { name: 'Compensar retraso' })).toHaveValue(String(delay));
   await page.getByRole('button', { name: 'Volver a automático' }).click();

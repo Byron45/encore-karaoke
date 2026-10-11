@@ -16,7 +16,7 @@ Karaoke para practicar con tu propia música. Encore escucha tu voz por el micr�
 - **Preparación automática opcional.** Separa la voz del acompañamiento y propone un mapa de notas a partir de la voz aislada, sin salir de tu equipo.
 - **Tres acompañamientos** tras separar: voz original, voz al 25 % o solo instrumental.
 - **Ajustes que se adaptan a tu equipo.** Compensa el retraso de audio, ajusta la sensibilidad al nivel de tu micrófono y avisa si la música está entrando por él.
-- **Resultados explicados** por frase, con descarga en JSON.
+- **Resultados explicados** por frase, con descarga en JSON, y **tu mejor marca** por canción y nivel de exigencia.
 
 ![Editor de la biblioteca: letra completa y mapa de notas de una canción](docs/img/mapa-de-notas.png)
 
@@ -110,7 +110,7 @@ El mapa generado es **experimental**: puede cubrir solo parte de la canción, eq
 
 - La voz se analiza en el navegador con un AudioWorklet. No se graba ni se sube.
 - El resultado que descargas incluye el trazo de afinación del intento (la nota detectada y el nivel en cada instante), no el sonido. Solo existe en la pestaña hasta que tú lo descargas.
-- La biblioteca vive en IndexedDB, en tu navegador. No hay cuentas ni copia en la nube: borrar los datos del sitio borra la biblioteca.
+- La biblioteca vive en IndexedDB, en tu navegador, y tus ajustes y mejores marcas en su almacenamiento local. No hay cuentas ni copia en la nube: borrar los datos del sitio lo borra todo.
 - El servidor local escucha solo en `127.0.0.1`. La preparación de audio comprueba además el origen de cada petición y un token de sesión.
 - Conexiones externas, todas iniciadas por una acción tuya salvo la primera:
   - Google Fonts, al cargar la página (hay tipografías locales de respaldo).
@@ -167,14 +167,14 @@ docs/           Notas técnicas, plan por etapas y evaluaciones
 - **El mapa automático es experimental** y suele quedar fragmentado en notas muy cortas.
 - **El audio importado no se transpone.** Se reproduce en su tono original.
 - **Los servicios locales dependen de Vite** (`npm run dev` o `npm run preview`). Copiar solo `dist/` a un alojamiento estático no incluye las búsquedas ni la preparación.
-- **No hay historial de puntuaciones**, pausa ni cola de canciones.
+- **Solo se guarda la mejor marca** de cada canción y nivel. No hay historial de intentos, pausa ni cola de canciones.
 
 ## Próximos pasos propuestos
 
 - [ ] Validar con voz real, auriculares y varios micrófonos.
 - [ ] Mejorar el mapa automático: unir notas fragmentadas y obtener tiempos por sílaba.
 - [ ] Importar mapas hechos a mano.
-- [ ] Récords locales, pausa y cola de canciones.
+- [ ] Historial de intentos, pausa y cola de canciones.
 - [ ] Copia de seguridad de la biblioteca y guardado que no reescriba el audio en cada cambio.
 - [ ] Formateador, linter e integración continua.
 

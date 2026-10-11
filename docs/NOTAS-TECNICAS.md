@@ -175,6 +175,8 @@ Se descartó medir el techo canción por canción con su voz aislada, que era la
 
 **En vivo.** El punto de la voz en el escenario toma el color del crédito que está ganando (verde, ámbar, rojo), el mismo código que «Ver trazo».
 
+**Mejor marca.** Al terminar una toma con micrófono se compara con la mejor guardada para esa canción y nivel de exigencia (`encore.best.v1` en localStorage, con la versión de puntuación en la clave: las marcas de otra versión no son comparables y se ignoran). No fijan marca las tomas con cero puntos ni aquellas en las que se detectaron los altavoces. Es el único dato de puntuación que persiste; no hay historial.
+
 **La propuesta de retraso** elige el desfase por el crédito sin ajustar, porque la escala se aplana al llegar a 10.000, y decide si proponerlo por la ganancia en puntos ajustados.
 
 Efecto sobre la toma analizada: 3.915 puntos como se cantó, 5.703 con estas reglas. La interpretación es la misma: en la nota un 28 % del tiempo y hasta un semitono un 49 %.
