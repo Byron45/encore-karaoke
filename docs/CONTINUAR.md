@@ -32,7 +32,7 @@ Siguiente paso: repetir la misma canción y enviar el JSON descargado. Con el tr
 
 ## Revisión 2F: auditoría y evaluación para cantar en condiciones reales
 
-9 de octubre de 2026. Una auditoría independiente confirmó que el motor es correcto en laboratorio y que el resultado real de 1.019 puntos no medía el canto: octava exacta, tolerancia de afinador, retraso sin medir, umbral de nivel fijo y música entrando por el micrófono. El proyecto pasó a ser un repositorio git; el commit `275aa80` conserva el estado anterior a estos cambios.
+9 de octubre de 2026. Una auditoría independiente confirmó que el motor es correcto en laboratorio y que el resultado real de 1.019 puntos no medía el canto: octava exacta, tolerancia de afinador, retraso sin medir, umbral de nivel fijo y música entrando por el micrófono. El proyecto pasó a ser un repositorio git; su primer commit conserva el estado anterior a estos cambios.
 
 Entrega 2F. `src/scoring.ts` pasa a `encore-intonation-3` con exigencias Relajada, Normal (por defecto) y Estricta; Estricta es la regla anterior sin cambios. `src/pitch-reference.ts` comparte `pitchError` entre puntuación y afinador. `src/capture.ts` mide en la cuenta atrás el ruido de fondo, el umbral de nivel y si se oyen los clics. `src/audio.ts` aplica el retraso que informa el equipo cuando no hay ajuste propio y, al terminar, `estimateOffset` propone otro si explica mejor el intento; `src/preferences.ts` guarda exigencia y retraso por micrófono. Resultado JSON versión 4 con `difficulty`, `levelGate` y `capture`. Corregidos: el escenario seguía con el mapa anterior tras «Guardar cambios», los trabajos cancelados dejaban temporales y «Probar micrófono» borraba el resultado.
 
