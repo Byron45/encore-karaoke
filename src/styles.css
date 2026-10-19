@@ -41,3 +41,5 @@ main{min-width:0}.topbar{height:77px;border-bottom:1px solid var(--line);display
 @media(max-width: 540px) { .tuner { padding: 18px 14px; } .tuner-readings { gap: 8px; } .tuner-readings strong { font-size: 12px; } .tuner-labels { font-size: 10px; } }
 
 .phrase-results p small{display:block;font-size:11px;line-height:1.6;color:var(--muted);margin-top:5px;font-weight:400}.phrase-results>div>p{min-width:0;overflow-wrap:anywhere}
+.phrase-results .text-button+.text-button{margin-left:0}.practice-actions{display:flex;flex-wrap:wrap;gap:6px 18px}.practice-actions .text-button{margin-top:14px}
+.result-panel .phrase-results .text-button{margin-top:0}

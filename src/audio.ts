@@ -10,6 +10,8 @@ import { LEVEL_GATE, referenceMidiAt } from './pitch-reference';
 import { hearsCountIn, levelGate, LevelStats, noiseFloor, reportedLatency } from './capture';
 
 export type Mode = 'demo' | 'microphone';
+// Seconds of the song heard before a phrase that is practised on its own.
+export const PHRASE_LEAD_IN = 2;
 export type { Summary };
 export interface Frame { time: number; captureTime: number; frequency: number | null; rms: number; confidence: number; summary: Summary; gate: number; speakerBleed: boolean }
 export const emptyFrame = (): Frame => ({ time: -3, captureTime: -3, frequency: null, rms: 0, confidence: 0, summary: new ScoreTracker(song.notes).summary(0), gate: LEVEL_GATE, speakerBleed: false });
@@ -44,13 +46,23 @@ export class KaraokeEngine {
   private latest = { frequency: null as number | null, rms: 0, confidence: 0, time: -Infinity };
   private lastDemoTime = -3;
   private lastPaint = 0;
-  constructor(options: { deviceId?: string; transpose?: number; song?: PlayableSong; accompaniment?: Accompaniment; difficulty?: Difficulty; audio?: Blob; ceiling?: number } = {}) {
+  // The stretch of the song this take plays, in song seconds: all of it, or one phrase with a little before and after.
+  private from = 0;
+  private end: number;
+  constructor(options: { deviceId?: string; transpose?: number; song?: PlayableSong; accompaniment?: Accompaniment; difficulty?: Difficulty; audio?: Blob; ceiling?: number; phrase?: number } = {}) {
     this.track = options.song || song;
     this.accompaniment = options.accompaniment || 'original';
     if (this.accompaniment !== 'original' && !this.track.prepared) throw new Error('Prepara las pistas en la biblioteca antes de elegir este acompañamiento.');
     this.override = options.audio || null;
     if (this.track.audio && options.transpose && !this.override) throw new Error('Cambia el tono de la pista antes de cantarla en otro tono.');
-    this.chart = this.track.notes.map(note => ({ ...note, midi: note.midi + (options.transpose || 0) }));
+    const notes = options.phrase === undefined ? this.track.notes : this.track.notes.filter(note => note.phrase === options.phrase);
+    if (!notes.length && options.phrase !== undefined) throw new Error('Esa frase no tiene notas que ensayar.');
+    this.chart = notes.map(note => ({ ...note, midi: note.midi + (options.transpose || 0) }));
+    this.end = this.track.duration;
+    if (options.phrase !== undefined) {
+      this.from = Math.max(0, notes[0].start - PHRASE_LEAD_IN);
+      this.end = Math.min(this.track.duration, Math.max(...notes.map(note => note.start + note.duration)) + .6);
+    }
     this.ceiling = options.ceiling;
     this.tracker = new ScoreTracker(this.chart, options.difficulty || 'relaxed', undefined, this.ceiling);
     this.deviceId = options.deviceId || '';
@@ -62,7 +74,7 @@ export class KaraokeEngine {
     this.reportedLatencyMs = reportedLatency(this.context!, this.inputLatency);
     if (this.automaticOffset) this.offsetMs = Math.max(0, Math.min(300, Math.round((this.reportedLatencyMs || 0) / 10) * 10));
     this.noiseFloor = noiseFloor(this.warmup);
-    this.speakerBleed = hearsCountIn(this.warmup, this.origin);
+    this.speakerBleed = hearsCountIn(this.warmup, this.origin + this.from);
     this.warmup = [];
   }
 
@@ -75,7 +87,7 @@ export class KaraokeEngine {
   private conclude(): Summary {
     const tracker = new ScoreTracker(this.chart, this.tracker.difficulty, this.gate(47), this.ceiling);
     for (const reading of this.readings) tracker.sample(reading.time - this.offsetMs / 1000, reading.span, reading.frequency, reading.confidence, reading.rms);
-    return tracker.summary(this.track.duration);
+    return tracker.summary(this.end);
   }
 
   /** A null offset uses the delay the device reports instead of a value the singer chose. */
@@ -98,22 +110,23 @@ export class KaraokeEngine {
         this.input = new MicrophoneInput(this.context);
         const ready = await this.input.open(this.deviceId, (data: InputReading) => {
           if (this.disposed) return;
-          if (!this.calibrated) { if (data.time < this.origin - .1) this.warmup.push(data); else this.calibrate(); }
+          if (!this.calibrated) { if (data.time < this.origin + this.from - .1) this.warmup.push(data); else this.calibrate(); }
           const time = data.time - this.origin;
           this.latest = data;
-          if (time > -1) this.readings.push({ time, span: data.span, frequency: data.frequency, confidence: data.confidence, rms: data.rms });
-          if (time >= 0) { this.levels.add(data.rms); if (this.levels.count % 47 === 0) this.tracker.gate = this.gate(470); }
+          if (time > this.from - 1) this.readings.push({ time, span: data.span, frequency: data.frequency, confidence: data.confidence, rms: data.rms });
+          if (time >= this.from) { this.levels.add(data.rms); if (this.levels.count % 47 === 0) this.tracker.gate = this.gate(470); }
           this.tracker.sample(time - this.offsetMs / 1000, data.span, data.frequency, data.confidence, data.rms);
         }, device => { this.inputLatency = device.latency || 0; onDevice(device); }, message => { this.stop(); onError(message); });
         if (!ready || this.disposed) return;
       }
-      this.origin = this.context.currentTime + 3;
+      // Song time zero; the stretch this take plays starts after a three-second count-in.
+      this.origin = this.context.currentTime + 3 - this.from;
       if (decoded) {
         this.fileSource = this.context.createBufferSource();
         this.fileSource.buffer = decoded;
         const gain = this.context.createGain(); gain.gain.value = 0.65;
         this.fileSource.connect(gain).connect(this.context.destination);
-        this.fileSource.start(this.origin);
+        this.fileSource.start(this.origin + this.from, this.from);
       }
       this.scheduleMusic(guide || mode === 'demo');
       const render = () => {
@@ -126,14 +139,14 @@ export class KaraokeEngine {
           this.tracker.sample(time, time - this.lastDemoTime, frequency, 1, frequency ? 0.12 : 0);
           this.lastDemoTime = time;
         }
-        if (time >= this.track.duration + (mode === 'microphone' ? this.offsetMs / 1000 + 0.1 : 0)) {
-          const result: Summary = mode === 'microphone' ? this.conclude() : this.tracker.summary(this.track.duration);
+        if (time >= this.end + (mode === 'microphone' ? this.offsetMs / 1000 + 0.1 : 0)) {
+          const result: Summary = mode === 'microphone' ? this.conclude() : this.tracker.summary(this.end);
           if (mode === 'microphone') result.capture = {
             offsetMs: this.offsetMs, automaticOffset: this.automaticOffset, reportedLatencyMs: this.reportedLatencyMs, noiseFloor: this.noiseFloor, speakerBleed: this.speakerBleed,
             restingLevel: this.levels.idle, voiceLevel: this.levels.voice,
             // Leaked music follows the track, not the singer, so it says nothing about the delay.
             suggestion: this.chart.length && !this.speakerBleed ? estimateOffset(this.chart, this.readings, this.offsetMs, this.tracker.difficulty, result.levelGate, this.ceiling) : null,
-            readings: this.readings.filter(reading => reading.time >= 0),
+            readings: this.readings.filter(reading => reading.time >= this.from),
           };
           this.stop();
           onFinish(result);
@@ -173,11 +186,14 @@ export class KaraokeEngine {
   }
 
   private scheduleMusic(guide: boolean) {
-    for (let beat = -3; beat < (this.track.audio ? 0 : this.track.duration); beat += 0.5) {
+    const start = this.origin + this.from;
+    for (let beat = -3; beat < (this.track.audio ? 0 : this.end - this.from); beat += 0.5) {
       // Over a recording the count-in is as loud as the music, so hearing it in the microphone reveals the speakers.
-      this.tone(beat < 0 ? 720 : 1200, this.origin + beat + 0.03, 0.05, beat < 0 ? this.track.audio ? 0.12 : 0.045 : 0.012);
+      this.tone(beat < 0 ? 720 : 1200, start + beat + 0.03, 0.05, beat < 0 ? this.track.audio ? 0.12 : 0.045 : 0.012);
     }
     for (let bar = 0; bar < (this.track.audio ? 0 : 8); bar++) {
+      // A chord that began before the stretch would sound over the count-in.
+      if (bar * 4 < this.from - .01 || bar * 4 >= this.end) continue;
       const chord = [[48, 52, 55], [45, 48, 52], [41, 45, 48], [43, 47, 50]][bar % 4];
       chord.forEach(midi => this.tone(frequencyOf(midi), this.origin + bar * 4, 3.8, 0.024));
     }

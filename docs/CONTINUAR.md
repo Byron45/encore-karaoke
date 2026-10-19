@@ -7,6 +7,7 @@
 - `prepare.py` separa en dos pasadas: instrumental con `Inst_HQ_3`, voz con `Kim_Vocal_2`. En «Primaveras» el bajo colado en la voz baja del 45 % al 1 % y el mapa pierde sus 51 notas instrumentales.
 - En canciones con pistas preparadas, 10.000 puntos son lo que obtiene la voz aislada de la grabación con las mismas reglas (`src/voice-reference.ts`). Si esa voz se lee mal (menos del 75 % del máximo) se usa la escala general del 85 %. `encore-intonation-5`; las marcas anteriores no se comparan.
 - Selector «Tono de la canción» (±5 semitonos) para canciones con audio: el servidor local mueve la pista con Rubber Band (`POST /api/preparation/transpose`, caché en `.local/audio/transposed`) y las notas se mueven con ella.
+- Ensayo por frases desde el resultado (botón «Ensayar»): solo esa frase, desde 2 s antes, sin marca.
 
 Medidas y decisiones en `docs/NOTAS-TECNICAS.md`, sección 2J. Las canciones de la biblioteca del usuario siguen con las pistas de `Inst_HQ_3` hasta que las vuelva a separar; «Primaveras» queda en la escala general hasta entonces.
 

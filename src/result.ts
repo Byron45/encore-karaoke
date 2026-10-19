@@ -10,6 +10,8 @@ export interface SessionInfo {
   microphone: ActiveMicrophone | null;
   // What the song's isolated voice earned under the same rules, when the song has one: it sets the scale.
   recording?: RecordingReference | null;
+  // Present when the take practised one phrase on its own.
+  phrase?: number;
 }
 
 export function resultDocument(summary: Summary, mode: Mode, session: SessionInfo, song: PlayableSong) {
@@ -32,7 +34,7 @@ export function resultDocument(summary: Summary, mode: Mode, session: SessionInf
         mappedSeconds: Math.round(song.notes.reduce((sum, n) => sum + n.duration, 0) * 1000) / 1000,
         omittedNotes: song.omittedNotes || 0,
         // The chart as played, in the key it was sung, so a result can be studied on its own: start and duration in milliseconds, MIDI note and phrase.
-        chart: song.notes.map(n => `${Math.round(n.start * 1000)}:${Math.round(n.duration * 1000)}:${n.midi + session.transpose}:${n.phrase}`).join(','),
+        chart: song.notes.filter(n => session.phrase === undefined || n.phrase === session.phrase).map(n => `${Math.round(n.start * 1000)}:${Math.round(n.duration * 1000)}:${n.midi + session.transpose}:${n.phrase}`).join(','),
       },
       ...(mode === 'microphone' ? { feedback: performanceFeedback(summary, session.transpose, !song.audio, experimentalMap) } : {}),
     } : { score: null }),

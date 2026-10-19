@@ -220,6 +220,8 @@ En la app, el selector **Tono de la canción** (de −5 a +5) sustituye al regis
 
 Verificado: pruebas unitarias del filtro (altura, duración exacta, caché, permisos), prueba de navegador con el servidor simulado (pista y notas movidas, sin reenvío al repetir, cancelación limpia) y una comprobación de extremo a extremo con el servidor real: pista 3 semitonos abajo reproducida a 219,5 Hz para 220 esperados, 10.000 puntos con una voz en el nuevo tono, 0,7 s de proceso para 4 s de canción. `tests/audio-service-check.mjs` pasa con las dos pasadas y los dos modelos reales.
 
+**Ensayo por frases.** Mejora añadida con el margen que dejó el usuario. Cada frase del resultado tiene **Ensayar**: el motor (`phrase` en `KaraokeEngine`) evalúa solo las notas de esa frase y reproduce desde `PHRASE_LEAD_IN` (2 s) antes de su primera nota hasta 0,6 s después de la última, tras la cuenta atrás de siempre. La calibración (retraso, ruido, altavoces) y el umbral de silencio se toman respecto al inicio de ese tramo. El resultado dice qué frase se ensayó, ofrece repetirla o volver a la canción completa, no guarda marca y descarga solo las notas de esa frase (`phrase` en el documento). Con el tono cambiado se ensaya en ese tono.
+
 No comprobado: el cambio de tono con voz humana ni la calidad auditiva de Rubber Band en canciones completas a ±5 semitonos; la nueva escala con más canciones y cantantes.
 
 ## Letras completas y canto libre

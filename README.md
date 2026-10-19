@@ -19,6 +19,7 @@ Karaoke para practicar con tu propia música. Encore escucha tu voz por el micr�
 - **Puntuación respecto a la voz original.** En una canción preparada, 10.000 puntos son lo que obtiene la voz de la propia grabación medida con este mismo sistema.
 - **Ajustes que se adaptan a tu equipo.** Compensa el retraso de audio, ajusta la sensibilidad al nivel de tu micrófono y avisa si la música está entrando por él.
 - **Resultados explicados** por frase, con descarga en JSON, y **tu mejor marca** por canción y nivel de exigencia.
+- **Ensayo por frases.** Desde el resultado, repite solo la frase que se te resiste: suena desde un poco antes y solo cuentan sus notas.
 
 ![Editor de la biblioteca: letra completa y mapa de notas de una canción](docs/img/mapa-de-notas.png)
 
@@ -100,7 +101,7 @@ Con un semitono de margen, una nota fija bien elegida se acerca a una melodía c
 
 **Qué no se evalúa.** Si la letra tiene tiempos por línea, las notas de un mapa automático que caen fuera de las líneas cantadas (introducción, interludios) se dejan fuera; el escenario indica cuántas. Tampoco puntúa lo que tus auriculares dejan pasar a su propio micrófono: el umbral de silencio se ajusta al nivel de tu voz en cada canción.
 
-**Repaso.** Al terminar, cada frase tiene un botón **Ver trazo** que dibuja tu voz sobre las notas con las que se comparó: verde en la nota, ámbar cerca, rojo fuera. Sirve para distinguir si desafinaste o si el mapa no representa lo que cantaste.
+**Repaso.** Al terminar, cada frase tiene un botón **Ver trazo** que dibuja tu voz sobre las notas con las que se comparó: verde en la nota, ámbar cerca, rojo fuera. Sirve para distinguir si desafinaste o si el mapa no representa lo que cantaste. **Ensayar** repite esa frase sola, con la cuenta atrás y dos segundos de canción antes; los ensayos no cuentan como marca.
 
 ## Preparación automática
 
@@ -134,7 +135,7 @@ El mapa generado es **experimental**: puede cubrir solo parte de la canción, eq
 ```bash
 npm test             # 64 pruebas unitarias: detector, puntuación, mapas, letras, cambio de tono, servicios
 npm run build        # comprobación de tipos y compilación
-npm run test:browser # 41 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
+npm run test:browser # 42 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
 ```
 
 Las pruebas de navegador hacen pasar una voz sintética por el micrófono, el detector y la puntuación reales. No sustituyen una prueba con voz humana.
