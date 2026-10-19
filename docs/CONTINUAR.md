@@ -1,12 +1,26 @@
-# Punto de continuación · revisión 2I terminada
+# Punto de continuación · revisión 2J terminada
 
-## Última revisión: escala para una voz real y nivel por defecto
+## Última revisión: separador de voz, escala de la grabación y cambio de tono
+
+18 de octubre de 2026. El usuario aceptó las tres propuestas de 2I, autorizó descargar `Kim_Vocal_2.onnx` y dejó libertad para otras mejoras. Revisión 2J:
+
+- `prepare.py` separa en dos pasadas: instrumental con `Inst_HQ_3`, voz con `Kim_Vocal_2`. En «Primaveras» el bajo colado en la voz baja del 45 % al 1 % y el mapa pierde sus 51 notas instrumentales.
+- En canciones con pistas preparadas, 10.000 puntos son lo que obtiene la voz aislada de la grabación con las mismas reglas (`src/voice-reference.ts`). Si esa voz se lee mal (menos del 75 % del máximo) se usa la escala general del 85 %. `encore-intonation-5`; las marcas anteriores no se comparan.
+- Selector «Tono de la canción» (±5 semitonos) para canciones con audio: el servidor local mueve la pista con Rubber Band (`POST /api/preparation/transpose`, caché en `.local/audio/transposed`) y las notas se mueven con ella.
+
+Medidas y decisiones en `docs/NOTAS-TECNICAS.md`, sección 2J. Las canciones de la biblioteca del usuario siguen con las pistas de `Inst_HQ_3` hasta que las vuelva a separar; «Primaveras» queda en la escala general hasta entonces.
+
+Pistas de comparación fuera del repositorio: `artifacts/audio-*/kim/vocals.wav` y `artifacts/audio-*/kim/map/analysis.json`; `artifacts/audio-un-millon-de-primaveras/kim` sirve como carpeta `--prepared` para `scripts/analyze-take.mjs` (para la toma 4, `--unsung 0-17,75-94`).
+
+Pendiente: que el usuario vuelva a separar «Primaveras» y la cante en la nueva escala, probar el cambio de tono con voz real y escuchar la calidad de Rubber Band a ±5 semitonos.
+
+## Revisión 2I: escala para una voz real y nivel por defecto
 
 11 de octubre de 2026. El usuario indicó que las puntuaciones seguían bajas y dejó las medidas a criterio del asistente. Revisión 2I: en Relajada y Normal, 10.000 puntos equivalen al 85 % del máximo teórico (lo que alcanza la voz original de una grabación); el nivel por defecto pasa a Relajada; el resultado dice cómo fue la toma y, si la voz se inclina hacia grave o agudo, hacia dónde corregir. La toma de «Un Millón de Primaveras» pasa de 3.915 a 5.703 puntos con la misma interpretación. Medidas y decisiones en `docs/NOTAS-TECNICAS.md`.
 
 `scripts/analyze-take.mjs` analiza un resultado descargado y, con la carpeta de `prepare.py`, lo compara con la voz original. Las pistas de las dos canciones probadas están en `artifacts/audio-luz-de-dia` y `artifacts/audio-un-millon-de-primaveras` (fuera del repositorio; se regeneran con `prepare.py` desde los MP3 de `C:\Users\ASUS\Music`).
 
-Lo que queda es afinación real del cantante (en la nota un 28 % del tiempo, inclinado hacia grave) y calidad de la separación. Pendiente: probar un modelo de separación pensado para la voz (requiere descargarlo y el permiso del usuario); transponer el acompañamiento.
+Lo que queda es afinación real del cantante (en la nota un 28 % del tiempo, inclinado hacia grave) y calidad de la separación. Resuelto en 2J: modelo de separación para la voz y cambio de tono; la inclinación hacia grave resultó ser en buena parte el bajo colado en la voz.
 
 ## Revisión 2H: fuga de los auriculares y notas sin letra
 
@@ -60,7 +74,7 @@ Proyecto: C:\Users\ASUS\Documents\Empleo\Proyectos Personales\Karaoke. React/Typ
 
 Vite reiniciado, última sesión de herramienta 13415, puerto 5173. Comprobar listener antes de levantar otro. Las sesiones pueden desaparecer tras interrupción por cuota. Navegador de prueba encore-tuner cerrado.
 
-.venv-audio: Python 3.11, audio-separator 0.47.0, librosa 0.11.0, torchcrepe 0.0.24; requirements-lock.txt fija dependencias. npm run audio:setup reproduce mediante uv. CPU, sin CUDA; Python global intacto. UVR-MDX-NET-Inst_HQ_3.onnx en .local/audio/models, pesos CREPE incluidos en paquete. Conservar modelos/cachés. Un cierre abrupto puede dejar temporales en .local/audio/jobs.
+.venv-audio: Python 3.11, audio-separator 0.47.0, librosa 0.11.0, torchcrepe 0.0.24; requirements-lock.txt fija dependencias. npm run audio:setup reproduce mediante uv. CPU, sin CUDA; Python global intacto. UVR-MDX-NET-Inst_HQ_3.onnx y Kim_Vocal_2.onnx (desde 2J) en .local/audio/models, FFmpeg 7.1 de gyan.dev con Rubber Band en .local/audio/models/bin, pesos CREPE incluidos en paquete. Conservar modelos/cachés. Un cierre abrupto puede dejar temporales en .local/audio/jobs.
 
 ## Entrega 2D
 

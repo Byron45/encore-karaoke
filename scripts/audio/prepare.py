@@ -17,7 +17,11 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-MODEL = 'UVR-MDX-NET-Inst_HQ_3.onnx'
+# Two passes: each model keeps the stem it was trained for. Inst_HQ_3 leaves bass and brass in the voice it subtracts;
+# Kim_Vocal_2 isolates the voice itself, which is what the map and the reduced-voice mix are made from.
+INSTRUMENTAL_MODEL = 'UVR-MDX-NET-Inst_HQ_3.onnx'
+VOCAL_MODEL = 'Kim_Vocal_2.onnx'
+MODEL = f'{INSTRUMENTAL_MODEL} + {VOCAL_MODEL}'
 RATE = 44100
 
 def emit(stage, progress, **extra):
@@ -160,20 +164,28 @@ def prepare(source, output, cache):
     if duration < 1 or duration > 600: raise ValueError('Usa un audio de entre 1 segundo y 10 minutos.')
     if not np.isfinite(original).all() or np.max(np.abs(original)) < 1e-5: raise ValueError('El audio está vacío o no contiene señal utilizable.')
     from audio_separator.separator import Separator
-    emit('Cargando el modelo de separación (primera vez: descarga)', 12)
     separator = Separator(model_file_dir=str(cache), output_dir=str(output), output_format='WAV', use_soundfile=True,
                           normalization_threshold=1.0, amplification_threshold=0.0, log_level=logging.WARNING)
-    separator.load_model(model_filename=MODEL)
-    emit('Separando voz e instrumental', 20)
-    separator.separate(str(canonical), custom_output_names={'Vocals': 'raw_vocals', 'Instrumental': 'raw_instrumental'})
+    emit('Cargando el modelo del instrumental (primera vez: descarga)', 10)
+    separator.load_model(model_filename=INSTRUMENTAL_MODEL)
+    emit('Separando el instrumental', 15)
+    separator.separate(str(canonical), custom_output_names={'Vocals': 'raw_rest_vocals', 'Instrumental': 'raw_instrumental'})
+    emit('Cargando el modelo de la voz (primera vez: descarga)', 38)
+    separator.load_model(model_filename=VOCAL_MODEL)
+    emit('Aislando la voz', 42)
+    separator.separate(str(canonical), custom_output_names={'Vocals': 'raw_vocals', 'Instrumental': 'raw_rest_instrumental'})
     stems, adjustments = {}, {}
-    for name in ['vocals', 'instrumental']:
+    for name in ['vocals', 'instrumental', 'rest_vocals', 'rest_instrumental']:
         data, sr = sf.read(output / f'raw_{name}.wav', dtype='float32', always_2d=True)
         if sr != rate or data.shape[1] != 2 or not np.isfinite(data).all(): raise ValueError('Formato de pista inesperado.')
         delta = len(data) - count
         if abs(delta) > rate * 0.05: raise ValueError('La duración de las pistas no coincide con el original.')
         data = data[:count] if delta >= 0 else np.pad(data, ((0, -delta), (0, 0)))
-        stems[name] = data; adjustments[name] = dict(tailTrimSamples=max(delta, 0), tailPadSamples=max(-delta, 0), offsetSamples=0)
+        stems[name] = data
+        if not name.startswith('rest_'): adjustments[name] = dict(tailTrimSamples=max(delta, 0), tailPadSamples=max(-delta, 0), offsetSamples=0)
+    # Each pass must rebuild the original on its own (so neither model shifted its stem), and so must the pair kept.
+    alignment_check(original, stems.pop('rest_vocals') + stems['instrumental'])
+    alignment_check(original, stems['vocals'] + stems.pop('rest_instrumental'))
     checks = alignment_check(original, stems['vocals'] + stems['instrumental'])
     # Same gain for both stems. Reduced voice contains exactly one instrumental.
     peak = max(float(np.max(np.abs(stems['vocals']))), float(np.max(np.abs(stems['instrumental']))), float(np.max(np.abs(stems['instrumental'] + 0.25 * stems['vocals']))))
@@ -187,12 +199,12 @@ def prepare(source, output, cache):
     emit('Pistas listas; preparando notas', 65)
     analysis = analyze_voice(output / 'vocals.wav')
     manifest = dict(schemaVersion=1, originalSha256=sha(source), duration=duration, sampleRate=rate, samples=count,
-                    separator=dict(package='audio-separator', version=importlib.metadata.version('audio-separator'), model=MODEL),
+                    separator=dict(package='audio-separator', version=importlib.metadata.version('audio-separator'), model=MODEL, models=dict(instrumental=INSTRUMENTAL_MODEL, vocals=VOCAL_MODEL)),
                     alignment=checks, adjustments=adjustments, sharedGain=gain, reducedVocalGain=0.25,
                     stems=descriptors, analysis=analysis, elapsedSeconds=round(time.monotonic() - started, 2))
     (output / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False), encoding='utf-8')
     # Only intermediates created in this fresh output folder are removed.
-    for name in ['decoded.wav', 'raw_vocals.wav', 'raw_instrumental.wav']:
+    for name in ['decoded.wav', 'raw_vocals.wav', 'raw_instrumental.wav', 'raw_rest_vocals.wav', 'raw_rest_instrumental.wav']:
         (output / name).unlink(missing_ok=True)
     emit('Preparación completada', 100)
 

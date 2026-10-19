@@ -2,10 +2,11 @@ import { midiOf } from './song.ts';
 import type { Note } from './song.ts';
 import { evaluationWindow, LEVEL_GATE, pitchError, referenceMidiAt, reliablePitch } from './pitch-reference.ts';
 
-export const SCORING_VERSION = 'encore-intonation-4';
+export const SCORING_VERSION = 'encore-intonation-5';
 
 // A sung voice has no pitch in its consonants and breaths. The isolated voice of a recording, scored against its own map,
 // earns about this share of the theoretical maximum; the scale of the sung difficulties ends there, not at an oscillator's 100 %.
+// A song with its isolated voice replaces it with what that voice itself earns (voice-reference.ts).
 export const VOICE_CEILING = .85;
 
 export type Difficulty = 'relaxed' | 'normal' | 'strict';
@@ -65,10 +66,13 @@ export class ScoreTracker {
   lastEnd = -Infinity;
   private cursor = 0;
   private ordered: boolean;
-  constructor(chart: Note[], difficulty: Difficulty = 'strict', gate = LEVEL_GATE) {
+  ceiling: number;
+  /** ceiling: the share of the theoretical maximum worth 10,000; by default the difficulty's own. */
+  constructor(chart: Note[], difficulty: Difficulty = 'strict', gate = LEVEL_GATE, ceiling = DIFFICULTIES[difficulty].ceiling) {
     this.chart = chart;
     this.difficulty = difficulty;
     this.gate = gate;
+    this.ceiling = ceiling;
     this.earned = chart.map(() => 0);
     this.voiced = chart.map(() => 0);
     this.analyzed = chart.map(() => 0);
@@ -132,7 +136,7 @@ export class ScoreTracker {
     const earned = this.earned.reduce((sum, value) => sum + value, 0);
     const voiced = this.voiced.reduce((sum, value) => sum + value, 0);
     // Credit as a share of what a real voice can reach under this difficulty.
-    const ceiling = DIFFICULTIES[this.difficulty].ceiling, reached = (credit: number, reference: number) => reference ? Math.min(1, credit / reference / ceiling) : 0;
+    const ceiling = this.ceiling, reached = (credit: number, reference: number) => reference ? Math.min(1, credit / reference / ceiling) : 0;
     const phraseDiagnostics = this.phraseGroups.map(({ phrase, indices }) => {
       const sum = (values: number[]) => indices.reduce((value, i) => value + values[i], 0);
       const reference = indices.reduce((value, i) => value + this.windows[i].duration, 0);
@@ -184,9 +188,9 @@ export class ScoreTracker {
 }
 
 /** Re-scores a finished performance at other capture delays and proposes one only when it clearly explains the singing better. Reading times are uncompensated song time. */
-export function estimateOffset(chart: Note[], readings: Reading[], appliedMs: number, difficulty: Difficulty, gate = LEVEL_GATE) {
+export function estimateOffset(chart: Note[], readings: Reading[], appliedMs: number, difficulty: Difficulty, gate = LEVEL_GATE, ceiling = DIFFICULTIES[difficulty].ceiling) {
   const scoreAt = (ms: number) => {
-    const tracker = new ScoreTracker(chart, difficulty, gate);
+    const tracker = new ScoreTracker(chart, difficulty, gate, ceiling);
     for (const reading of readings) tracker.sample(reading.time - ms / 1000, reading.span, reading.frequency, reading.confidence, reading.rms);
     const { score, rawScore } = tracker.summary(Infinity);
     return { offsetMs: ms, score, rawScore };
@@ -214,7 +218,7 @@ export function performanceFeedback(summary: Summary, transpose = 0, canTranspos
   // A steady lean of up to a semitone and a half is the singer sitting under or over the notes; further off, it is other notes.
   const lean = summary.meanSignedCents ?? 0, off = Math.abs(lean);
   const leaning = off >= 40 && off <= 150 && off >= .4 * (summary.meanAbsoluteCents ?? 0);
-  const advice = leaning ? ` De media cantaste ${off} cents más ${lean < 0 ? 'grave' : 'agudo'} que la referencia (100 cents son un semitono). ${lean < 0 ? 'Prueba a subir un poco el tono; dejar un oído libre ayuda a oírte.' : 'Prueba a bajar un poco el tono.'}` : '';
+  const advice = leaning ? ` De media cantaste ${off} cents más ${lean < 0 ? 'grave' : 'agudo'} que la referencia (100 cents son un semitono). ${lean < 0 ? `Prueba a subir un poco el tono; dejar un oído libre ayuda a oírte.${canTranspose ? '' : ' Si la canción te queda alta, bájale uno o dos semitonos en Tono de la canción.'}` : `Prueba a bajar un poco el tono.${canTranspose ? '' : ' Si te queda baja, súbele un semitono en Tono de la canción.'}`}` : '';
   if (summary.intonation !== null && summary.intonation < 50) return leaning
     ? { title: lean < 0 ? 'Cantaste por debajo de la nota.' : 'Cantaste por encima de la nota.', detail: `La afinación durante el tono evaluable fue del ${summary.intonation}%.${advice} En cada frase, Ver trazo muestra dónde.${experimentalMap ? ' El mapa es automático: si el trazo va paralelo a las barras, la diferencia es de afinación; si no se parecen, revisa el mapa.' : ''}` }
     : { title: 'El tono detectado tuvo poca coincidencia con la referencia.', detail: `La afinación durante el tono evaluable fue del ${summary.intonation}%. Compara tu tono con el afinador y revisa la sincronización.${experimentalMap ? ' Revisa la voz aislada y el mapa automático antes de concluir que la diferencia procede de tu canto.' : ''}` };

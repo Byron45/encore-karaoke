@@ -37,16 +37,22 @@ export class KaraokeEngine {
   private track: PlayableSong;
   private fileSource: AudioBufferSourceNode | null = null;
   private accompaniment: Accompaniment;
+  // The accompaniment already moved to the chosen key on the local server.
+  private override: Blob | null;
+  // Share of the theoretical maximum worth 10,000: what the recording's own voice earns, when the song has it.
+  private ceiling: number | undefined;
   private latest = { frequency: null as number | null, rms: 0, confidence: 0, time: -Infinity };
   private lastDemoTime = -3;
   private lastPaint = 0;
-  constructor(options: { deviceId?: string; transpose?: number; song?: PlayableSong; accompaniment?: Accompaniment; difficulty?: Difficulty } = {}) {
+  constructor(options: { deviceId?: string; transpose?: number; song?: PlayableSong; accompaniment?: Accompaniment; difficulty?: Difficulty; audio?: Blob; ceiling?: number } = {}) {
     this.track = options.song || song;
     this.accompaniment = options.accompaniment || 'original';
     if (this.accompaniment !== 'original' && !this.track.prepared) throw new Error('Prepara las pistas en la biblioteca antes de elegir este acompañamiento.');
-    if (this.track.audio && options.transpose) throw new Error('Los archivos importados se cantan en su registro original en esta etapa.');
+    this.override = options.audio || null;
+    if (this.track.audio && options.transpose && !this.override) throw new Error('Cambia el tono de la pista antes de cantarla en otro tono.');
     this.chart = this.track.notes.map(note => ({ ...note, midi: note.midi + (options.transpose || 0) }));
-    this.tracker = new ScoreTracker(this.chart, options.difficulty || 'relaxed');
+    this.ceiling = options.ceiling;
+    this.tracker = new ScoreTracker(this.chart, options.difficulty || 'relaxed', undefined, this.ceiling);
     this.deviceId = options.deviceId || '';
   }
 
@@ -67,7 +73,7 @@ export class KaraokeEngine {
 
   /** The live score follows a gate that is still settling. The result replays every reading with the final one, so the first seconds are judged like the rest. */
   private conclude(): Summary {
-    const tracker = new ScoreTracker(this.chart, this.tracker.difficulty, this.gate(47));
+    const tracker = new ScoreTracker(this.chart, this.tracker.difficulty, this.gate(47), this.ceiling);
     for (const reading of this.readings) tracker.sample(reading.time - this.offsetMs / 1000, reading.span, reading.frequency, reading.confidence, reading.rms);
     return tracker.summary(this.track.duration);
   }
@@ -81,8 +87,8 @@ export class KaraokeEngine {
       if (this.disposed) return;
       let decoded: AudioBuffer | null = null;
       if (this.track.audio) {
-        const variant = this.accompaniment === 'original' ? this.track.audio : this.track.prepared![this.accompaniment];
-        if (this.accompaniment !== 'original') await verifyStem(variant, this.track.prepared!.manifest.stems[this.accompaniment]);
+        const variant = this.override || (this.accompaniment === 'original' ? this.track.audio : this.track.prepared![this.accompaniment]);
+        if (!this.override && this.accompaniment !== 'original') await verifyStem(variant, this.track.prepared!.manifest.stems[this.accompaniment]);
         if (this.disposed) return;
         decoded = await this.context.decodeAudioData(await variant.arrayBuffer());
         if (this.disposed) return;
@@ -126,7 +132,7 @@ export class KaraokeEngine {
             offsetMs: this.offsetMs, automaticOffset: this.automaticOffset, reportedLatencyMs: this.reportedLatencyMs, noiseFloor: this.noiseFloor, speakerBleed: this.speakerBleed,
             restingLevel: this.levels.idle, voiceLevel: this.levels.voice,
             // Leaked music follows the track, not the singer, so it says nothing about the delay.
-            suggestion: this.chart.length && !this.speakerBleed ? estimateOffset(this.chart, this.readings, this.offsetMs, this.tracker.difficulty, result.levelGate) : null,
+            suggestion: this.chart.length && !this.speakerBleed ? estimateOffset(this.chart, this.readings, this.offsetMs, this.tracker.difficulty, result.levelGate, this.ceiling) : null,
             readings: this.readings.filter(reading => reading.time >= 0),
           };
           this.stop();

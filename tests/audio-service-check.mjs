@@ -34,6 +34,9 @@ try {
   } while (job.state !== 'complete');
   const manifest = await (await fetch(`${base}/jobs/${id}/manifest.json`, { headers })).json();
   validateManifest(manifest, sha, 8);
+  // Two passes: the instrumental from the model trained for it, the voice from the one trained for voices.
+  assert.deepEqual(manifest.separator.models, { instrumental: 'UVR-MDX-NET-Inst_HQ_3.onnx', vocals: 'Kim_Vocal_2.onnx' });
+  assert.equal(manifest.alignment.length, 3);
   for (const name of ['vocals', 'instrumental', 'reduced']) {
     const response = await fetch(`${base}/jobs/${id}/${name}.wav`, { headers }); assert.equal(response.status, 200);
     await verifyStem(await response.blob(), manifest.stems[name]);

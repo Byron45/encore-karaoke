@@ -15,7 +15,7 @@ export interface LibrarySong {
 }
 export interface PlayableSong {
   title: string; artist: string; duration: number; bpm: number | null; notes: Note[]; phrases: string[];
-  audio?: Blob; id?: string; lyrics?: LyricsDocument; prepared?: PreparedAudio; automaticMap?: AutomaticMapInfo;
+  audio?: Blob; audioHash?: string; id?: string; lyrics?: LyricsDocument; prepared?: PreparedAudio; automaticMap?: AutomaticMapInfo;
   // Notes of the saved map left out of this take because no lyric line is sung there.
   omittedNotes?: number;
 }

@@ -40,7 +40,7 @@ El mapa puede editarse manualmente o generarse como **borrador automático exper
 
 ## Separación y mapa automático · etapa 2C
 
-En esta computadora el motor ya está instalado y probado. Para otra instalación, instala [uv](https://docs.astral.sh/uv/) y ejecuta `npm run audio:setup`. Crea `.venv-audio` con Python 3.11 y dependencias fijadas en `scripts/audio/requirements-lock.txt`. Se usa CPU; no requiere configurar CUDA. El primer procesamiento descarga el modelo `UVR-MDX-NET-Inst_HQ_3.onnx` (~67 MB). Después queda en `.local/audio/models`.
+En esta computadora el motor ya está instalado y probado. Para otra instalación, instala [uv](https://docs.astral.sh/uv/) y ejecuta `npm run audio:setup`. Crea `.venv-audio` con Python 3.11 y dependencias fijadas en `scripts/audio/requirements-lock.txt`. Se usa CPU; no requiere configurar CUDA. El primer procesamiento descarga los modelos `UVR-MDX-NET-Inst_HQ_3.onnx` y `Kim_Vocal_2.onnx` (~67 MB cada uno; véase la revisión 2J). Después quedan en `.local/audio/models`.
 
 1. En **Biblioteca**, abre la canción y pulsa **Separar voz y generar mapa**. El original se envía únicamente al servidor de esta computadora.
 2. Espera el progreso o cancela. Escucha las tres vistas previas: instrumental, voz reducida y voz aislada. El original y el mapa guardado se conservan mientras revisas el resultado.
@@ -182,6 +182,45 @@ Se descartó medir el techo canción por canción con su voz aislada, que era la
 Efecto sobre la toma analizada: 3.915 puntos como se cantó, 5.703 con estas reglas. La interpretación es la misma: en la nota un 28 % del tiempo y hasta un semitono un 49 %.
 
 El 27 % de las notas sin tono detectado en esa toma se reparte así: 12 % de sonido sin tono (consonantes, aire) y 15 % por debajo del umbral, es decir, sin cantar. De 343 notas, 50 quedaron sin cantar, en 63 la voz entró tarde (mediana de 78 ms) y en 29 se soltó antes del final. No es un fallo de detección.
+
+## Separador de voz, escala de la grabación y cambio de tono · revisión 2J
+
+El usuario aceptó las tres propuestas de la revisión anterior: puntuar respecto a la voz original, poder bajar el tono y probar un separador pensado para la voz (con permiso para descargar `Kim_Vocal_2.onnx`).
+
+**Separador en dos pasadas.** `Inst_HQ_3` está entrenado para el instrumental: la voz que entregaba era el residuo, con el bajo y los metales que no reconocía como instrumento. `Kim_Vocal_2` (misma arquitectura MDX-Net y mismo tamaño, otro entrenamiento) está entrenado para la voz. `prepare.py` usa cada modelo para la pista que mejor conserva: el instrumental de `Inst_HQ_3`, la voz de `Kim_Vocal_2`; la mezcla con voz reducida se arma con esas dos. Cada pasada debe reconstruir el original por sí sola (comprobación de alineación de la revisión 2C) y también el par que se conserva. El manifiesto mantiene `separator.model` como texto (`"UVR-MDX-NET-Inst_HQ_3.onnx + Kim_Vocal_2.onnx"`) para que los manifiestos anteriores y los nuevos validen igual, y añade `separator.models`. La separación tarda el doble.
+
+Comparación sobre las dos canciones de prueba, con el mismo análisis CREPE para el mapa:
+
+| | Primaveras · Inst_HQ_3 | Primaveras · Kim_Vocal_2 | Luz de Día · Inst_HQ_3 | Luz de Día · Kim_Vocal_2 |
+| --- | --- | --- | --- | --- |
+| Lecturas de la voz por debajo de Do3 (el bajo colado) | 45 % | 1 % | 24 % | 14 % |
+| Notas del mapa en tramos sin letra | 51 | 0 | 0 | 0 |
+| Notas del mapa | 394 | 337 | 493 | 508 |
+| Voz original contra su mapa, Normal, sobre el máximo teórico | 6.845 (cobertura 74 %) | 9.778 (98 %) | 8.423 (88 %) | 8.325 (87 %) |
+
+En «Primaveras» el cambio es grande: la voz sale limpia y el mapa ya no tiene notas en la introducción ni en el interludio. En «Luz de Día» queda casi igual; la voz de Enanitos Verdes es grave (el mapa baja hasta Fa#2) y lo que queda por debajo de Do3 es voz.
+
+La toma del usuario en «Primaveras», comparada instante a instante con la voz original y sin pasar por el mapa: en la misma nota el 46 % del tiempo y desviación mediana de −18 cents, frente al 31 % y −54 cents que salían con la voz de `Inst_HQ_3`. Buena parte de la inclinación hacia grave del diagnóstico 2H era el bajo de la pista de voz, no el canto.
+
+**Escala de la grabación.** La revisión 2I descartó medir el techo canción por canción porque una voz separada sucia lo falseaba. Con el separador de voz la medida es fiable, y varía entre canciones (0,98 en «Primaveras», 0,83 en «Luz de Día»): el detector de la app no lee igual todas las voces. `src/voice-reference.ts` lee la voz aislada en un worker (`public/audio/voice-reference.js`, con el mismo encuadre que el worklet del micrófono; ~1 s por canción), la puntúa con el mismo mapa, las mismas reglas y su propio umbral de silencio, y ese resultado es el 10.000 de la canción en Relajada y Normal (`ScoreTracker` acepta un techo propio). Reglas:
+
+- La medida se toma con el mapa tal como se canta (sin las notas fuera de la letra) y en el tono original de la grabación.
+- Si la voz aislada no llega al 75 % del máximo teórico no se usa: esa falta es de la separación, no del cantante. Se aplica la escala general (85 %) y el resultado sugiere volver a separar. Es lo que pasa con las canciones preparadas con `Inst_HQ_3` como «Primaveras» (0,68).
+- Sin pistas preparadas (mapa a mano, ejercicio incluido) también se usa la escala general.
+- Estricta no cambia de escala; el resultado informa de lo que obtiene la grabación.
+- La propuesta de retraso usa la misma escala que la toma.
+
+La versión pasa a `encore-intonation-5` y las mejores marcas anteriores dejan de compararse. El resultado descargado incluye `recording` (lo que obtuvo la grabación, el techo y si se usó) y, desde esta versión, el mapa cantado en el tono en que se cantó.
+
+En «Primaveras», preparada de nuevo, la toma del usuario vale 5.542 en Relajada (5.703 en la app actual con el mapa antiguo y la escala general; 6.391 con el mapa nuevo y la escala general). La diferencia con la escala general es lo que se buscaba: 10.000 es Vicente Fernández, que el sistema lee casi entero. Referencias en la misma escala: mejor nota fija 4.718, notas al azar 2.757, la toma sobre otra parte de la canción 1.143. En Normal, 4.452 frente a 3.032 de la nota fija.
+
+**Cambio de tono.** `POST /api/preparation/transpose` recibe la pista elegida (original, voz reducida o instrumental), comprueba su SHA-256 y la mueve de −6 a +6 semitonos con el filtro Rubber Band de FFmpeg (`pitchq=quality`, canales juntos). Después rellena y recorta a exactamente el número de muestras pedido, porque Rubber Band puede acabar unos milisegundos antes; medido con ráfagas de tono, los inicios se desplazan como mucho 20 ms y la altura queda a menos de 5 cents. Procesa unas 13 veces más rápido que el tiempo real. Los resultados se guardan en `.local/audio/transposed` (hasta 2 GB, se borran los menos usados). Un solo trabajo a la vez; si el navegador cancela, se detiene FFmpeg. `GET /api/preparation/transpose` dice si el cambio está disponible sin esperar la comprobación de Python, y solo lo ofrece si ese FFmpeg incluye Rubber Band (el de Windows que instala el motor lo incluye).
+
+En la app, el selector **Tono de la canción** (de −5 a +5) sustituye al registro de octava en las canciones con audio. Las notas del mapa y la guía se mueven con la pista; la última pista pedida se conserva en memoria para repetir sin volver a enviarla. El selector queda desactivado, con explicación, si el servidor no puede cambiar el tono. Cuando la desviación media indica que el usuario canta por debajo de la nota, el resultado sugiere bajar la canción uno o dos semitonos.
+
+Verificado: pruebas unitarias del filtro (altura, duración exacta, caché, permisos), prueba de navegador con el servidor simulado (pista y notas movidas, sin reenvío al repetir, cancelación limpia) y una comprobación de extremo a extremo con el servidor real: pista 3 semitonos abajo reproducida a 219,5 Hz para 220 esperados, 10.000 puntos con una voz en el nuevo tono, 0,7 s de proceso para 4 s de canción. `tests/audio-service-check.mjs` pasa con las dos pasadas y los dos modelos reales.
+
+No comprobado: el cambio de tono con voz humana ni la calidad auditiva de Rubber Band en canciones completas a ±5 semitonos; la nueva escala con más canciones y cantantes.
 
 ## Letras completas y canto libre
 

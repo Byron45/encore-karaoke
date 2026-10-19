@@ -15,6 +15,8 @@ Karaoke para practicar con tu propia música. Encore escucha tu voz por el micr�
 - **Letras con tiempos** desde [LRCLIB](https://lrclib.net) y metadatos de la grabación desde [MusicBrainz](https://musicbrainz.org).
 - **Preparación automática opcional.** Separa la voz del acompañamiento y propone un mapa de notas a partir de la voz aislada, sin salir de tu equipo.
 - **Tres acompañamientos** tras separar: voz original, voz al 25 % o solo instrumental.
+- **Cambio de tono.** Sube o baja tu canción hasta cinco semitonos sin cambiar el ritmo; las notas que se evalúan se mueven con ella.
+- **Puntuación respecto a la voz original.** En una canción preparada, 10.000 puntos son lo que obtiene la voz de la propia grabación medida con este mismo sistema.
 - **Ajustes que se adaptan a tu equipo.** Compensa el retraso de audio, ajusta la sensibilidad al nivel de tu micrófono y avisa si la música está entrando por él.
 - **Resultados explicados** por frase, con descarga en JSON, y **tu mejor marca** por canción y nivel de exigencia.
 
@@ -62,6 +64,7 @@ Con letra y sin notas también puedes cantar: la app reproduce tu audio y avanza
 En el panel **Prepara tu voz**:
 
 - **Exigencia de afinación** decide cuánto margen tienes (tabla siguiente). Empieza en Relajada.
+- **Tono de la canción** sube o baja la música y las notas, de semitono en semitono. Si al terminar el resultado dice que cantaste por debajo de la nota, prueba a bajarla uno o dos. Necesita la preparación automática instalada; la primera vez con cada canción y tono tarda unos 5 segundos por minuto de canción.
 - **Compensar retraso** empieza en automático. Al terminar una canción, si tu voz encaja mejor con otro valor, aparece un botón para usarlo; se recuerda para ese micrófono.
 
 ## Cómo se puntúa
@@ -76,19 +79,24 @@ La puntuación mide cuánto tiempo sostienes la nota correcta. No reconoce palab
 
 El margen de tiempo acepta una nota que entra un poco antes o se sostiene un poco después de lo que marca el mapa. Los silencios previstos no suman ni restan; no cantar durante una nota sí reduce el resultado. Los resultados solo son comparables entre intentos con la misma exigencia.
 
-**La escala.** Una voz real no suena con tono el 100 % del tiempo: las consonantes y las respiraciones no tienen nota. Por eso, en Relajada y Normal, 10.000 puntos equivalen al 85 % del máximo teórico, que es lo que alcanza la voz original de una grabación medida con este mismo sistema. Estricta se queda en el máximo teórico. El resultado muestra también los puntos sin ese ajuste.
+**La escala.** Una voz real no suena con tono el 100 % del tiempo: las consonantes y las respiraciones no tienen nota. Por eso, en Relajada y Normal, 10.000 puntos no son el máximo teórico sino lo que alcanza una voz real:
 
-**Qué puntuación esperar** en Relajada, según lo medido hasta ahora (dos canciones y una toma real):
+- **En una canción con pistas preparadas**, la app lee la voz aislada de la grabación con el mismo detector que tu micrófono y la puntúa con las mismas reglas. Lo que obtiene son los 10.000 puntos de esa canción. Medidas así, «Un Millón de Primaveras» llega al 98 % del máximo teórico y «Luz de Día» al 83 %: el detector no lee igual de bien todas las voces, y la escala lo compensa.
+- **Si esa voz aislada se lee mal** (menos del 75 % del máximo, señal de una separación sucia) o la canción no tiene pistas preparadas, se usa una escala general: 10.000 es el 85 % del máximo.
+
+Estricta se queda en el máximo teórico. El resultado dice qué escala se usó y muestra también los puntos sin ajustar.
+
+**Qué puntuación esperar** en Relajada, medido sobre «Un Millón de Primaveras», preparada con el separador actual, y una toma real:
 
 | Quién canta | Puntos |
 | --- | --- |
-| La voz original aislada, contra su propio mapa | 8.100 y 9.900 |
-| Una voz sin entrenar que sigue la melodía, en la nota un tercio del tiempo | unos 5.700 |
-| Una sola nota sostenida, la que mejor encaja con la canción | hasta 5.100 |
-| Notas al azar dentro del registro | unos 3.200 |
-| La misma voz sobre otra parte de la canción | unos 1.300 |
+| La voz original aislada, contra su propio mapa | 10.000 (es la referencia) |
+| Una voz sin entrenar que sigue la melodía, en la misma nota que la grabación casi la mitad del tiempo | unos 5.500 |
+| Una sola nota sostenida, la que mejor encaja con la canción | hasta 4.700 |
+| Notas al azar dentro del registro | unos 2.800 |
+| La misma voz sobre otra parte de la canción | unos 1.100 |
 
-Con un semitono de margen, una nota fija bien elegida puntúa casi como una melodía cantada a medias: es el precio de una escala indulgente. Normal separa más (4.500 frente a 3.200).
+Con un semitono de margen, una nota fija bien elegida se acerca a una melodía cantada a medias: es el precio de una escala indulgente. Normal separa más (4.450 frente a 3.000).
 
 **Qué no se evalúa.** Si la letra tiene tiempos por línea, las notas de un mapa automático que caen fuera de las líneas cantadas (introducción, interludios) se dejan fuera; el escenario indica cuántas. Tampoco puntúa lo que tus auriculares dejan pasar a su propio micrófono: el umbral de silencio se ajusta al nivel de tu voz en cada canción.
 
@@ -102,7 +110,11 @@ Es opcional y se instala aparte, porque descarga dependencias pesadas de Python:
 npm run audio:setup
 ```
 
-Crea un entorno aislado en `.venv-audio` con Python 3.11 y dependencias fijadas. El primer uso descarga el modelo de separación (unos 67 MB). Todo el procesamiento se hace por CPU en tu equipo.
+Crea un entorno aislado en `.venv-audio` con Python 3.11 y dependencias fijadas. Todo el procesamiento se hace por CPU en tu equipo.
+
+La separación hace dos pasadas, cada una con el modelo entrenado para lo que se queda: UVR-MDX-NET-Inst_HQ_3 para el instrumental y Kim_Vocal_2 para la voz. La voz aislada es la base del mapa de notas y de la escala, y con el modelo de voz sale mucho más limpia: en una de las canciones de prueba, el bajo que se colaba en ella pasó del 45 % de las lecturas con tono al 1 %. El primer uso descarga los dos modelos (unos 134 MB). El mismo motor instala FFmpeg, que cambia el tono de las canciones con Rubber Band. En Windows la versión que instala ya lo incluye; en otros sistemas la app comprueba si lo tiene y, si no, deja desactivado el cambio de tono.
+
+Las canciones preparadas antes de esta versión conservan sus pistas. Para usar la voz nueva, vuelve a separarlas desde la biblioteca.
 
 El mapa generado es **experimental**: puede cubrir solo parte de la canción, equivocarse de octava o confundir coros con la voz principal. Escucha la voz aislada y revisa las notas antes de fiarte de la puntuación.
 
@@ -115,14 +127,14 @@ El mapa generado es **experimental**: puede cubrir solo parte de la canción, eq
 - Conexiones externas, todas iniciadas por una acción tuya salvo la primera:
   - Google Fonts, al cargar la página (hay tipografías locales de respaldo).
   - MusicBrainz y LRCLIB, al pulsar buscar; se envían solo título y artista.
-  - La descarga del modelo, la primera vez que separas una canción.
+  - La descarga de los dos modelos, la primera vez que separas una canción.
 
 ## Pruebas
 
 ```bash
-npm test             # 60 pruebas unitarias: detector, puntuación, mapas, letras, servicios
+npm test             # 64 pruebas unitarias: detector, puntuación, mapas, letras, cambio de tono, servicios
 npm run build        # comprobación de tipos y compilación
-npm run test:browser # 40 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
+npm run test:browser # 41 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
 ```
 
 Las pruebas de navegador hacen pasar una voz sintética por el micrófono, el detector y la puntuación reales. No sustituyen una prueba con voz humana.
@@ -135,7 +147,7 @@ El resultado que descargas tras cantar incluye el trazo de tu afinación. Esta h
 node scripts/analyze-take.mjs resultado.json
 ```
 
-Con la carpeta que genera `scripts/audio/prepare.py` para el audio original de la canción, compara además tu voz con la voz original aislada:
+Con la carpeta que genera `scripts/audio/prepare.py` para el audio original de la canción, compara además tu voz con la voz original aislada y calcula tu puntuación en la escala de esa grabación:
 
 ```bash
 node scripts/analyze-take.mjs resultado.json --prepared artifacts/audio-mi-cancion
@@ -162,10 +174,10 @@ docs/           Notas técnicas, plan por etapas y evaluaciones
 - **Hacen falta auriculares.** Sin ellos la música se mezcla con tu voz y la puntuación deja de ser fiable. La app lo detecta y avisa, pero no lo corrige.
 - **Poca validación con voz real.** Además de la señal sintética, la evaluación se ha contrastado con la voz original aislada de una canción y con una prueba cantada con auriculares con micrófono. Faltan más personas, micrófonos y auriculares Bluetooth.
 - **El mapa automático sale de la pista de voz separada**, que incluye coros, segundas voces y a veces instrumentos. En esos tramos la referencia puede no ser la melodía principal. Sin letra con tiempos, las notas de los tramos instrumentales no se pueden descartar.
-- **La escala usa un único ajuste para todas las canciones** (85 %). Cuando la pista de voz separada sale sucia, la voz original puntúa menos contra su propio mapa (8.100 en una de las dos canciones medidas); parte de esa diferencia puede venir de notas del mapa que no son de la voz.
+- **La escala de cada canción depende de su voz aislada.** Una separación mejor o peor cambia el 10.000 de esa canción; por eso una voz que se lee mal no se usa como referencia. Sin pistas preparadas se aplica la escala general (85 %), que es una media y no una medida.
 - **El retraso automático es una estimación.** Parte de lo que informa el equipo, que puede no coincidir con el real; por eso existe la propuesta al terminar cada canción.
 - **El mapa automático es experimental** y suele quedar fragmentado en notas muy cortas.
-- **El audio importado no se transpone.** Se reproduce en su tono original.
+- **El cambio de tono necesita el servidor local** con el motor de audio instalado y llega a cinco semitonos; más allá la voz y los instrumentos suenan artificiales. Rubber Band puede adelantar o retrasar el sonido unos 20 ms, dentro del margen de tiempo de Relajada y Normal.
 - **Los servicios locales dependen de Vite** (`npm run dev` o `npm run preview`). Copiar solo `dist/` a un alojamiento estático no incluye las búsquedas ni la preparación.
 - **Solo se guarda la mejor marca** de cada canción y nivel. No hay historial de intentos, pausa ni cola de canciones.
 
@@ -191,7 +203,7 @@ El plan original por etapas está en [docs/ETAPAS.md](docs/ETAPAS.md).
 
 React 19, TypeScript y Vite. Web Audio API para la captura y el análisis. Playwright para las pruebas de navegador.
 
-El motor opcional usa [python-audio-separator](https://github.com/nomadkaraoke/python-audio-separator) con un modelo UVR-MDX-NET, [torchcrepe](https://github.com/maxrmorrison/torchcrepe) y [librosa](https://librosa.org). Los iconos son de [Lucide](https://lucide.dev). Los metadatos proceden de MusicBrainz y las letras de LRCLIB; cada servicio tiene sus propias condiciones de uso.
+El motor opcional usa [python-audio-separator](https://github.com/nomadkaraoke/python-audio-separator) con dos modelos UVR-MDX-NET (Inst_HQ_3 y Kim_Vocal_2), [FFmpeg](https://ffmpeg.org) con [Rubber Band](https://breakfastquay.com/rubberband/) para el cambio de tono, [torchcrepe](https://github.com/maxrmorrison/torchcrepe) y [librosa](https://librosa.org). Los iconos son de [Lucide](https://lucide.dev). Los metadatos proceden de MusicBrainz y las letras de LRCLIB; cada servicio tiene sus propias condiciones de uso.
 
 Encore no incluye ni descarga canciones. Usa solo audio y letras que tengas derecho a utilizar.
 

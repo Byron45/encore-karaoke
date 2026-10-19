@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { existsSync, createReadStream } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile, rm, stat } from 'node:fs/promises';
+import { existsSync, createReadStream, createWriteStream, readdirSync } from 'node:fs';
+import { mkdir, readFile, readdir, writeFile, rename, rm, stat, utimes } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,6 +11,55 @@ const script = path.join(root, 'scripts/audio/prepare.py');
 const jobRoot = path.join(root, '.local/audio/jobs');
 const artifactNames = new Set(['manifest.json', 'analysis.json', 'vocals.wav', 'instrumental.wav', 'reduced.wav']);
 const MAX_BYTES = 30 * 1024 * 1024;
+const transposedRoot = path.join(root, '.local/audio/transposed');
+const TRANSPOSE_BYTES = 128 * 1024 * 1024, TRANSPOSE_CACHE_BYTES = 2 * 1024 ** 3, RATE = 44100;
+
+/** The FFmpeg the audio engine installed: the copy prepare.py keeps beside the models, or the one inside the Python environment. */
+export function findFfmpeg(base = root) {
+  const name = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg', copy = path.join(base, '.local/audio/models/bin', name);
+  if (existsSync(copy)) return copy;
+  const lib = path.join(base, '.venv-audio', process.platform === 'win32' ? 'Lib' : 'lib');
+  const packages = process.platform === 'win32' ? [path.join(lib, 'site-packages')] : (existsSync(lib) ? readdirSync(lib).map(entry => path.join(lib, entry, 'site-packages')) : []);
+  for (const folder of packages.map(entry => path.join(entry, 'imageio_ffmpeg', 'binaries'))) {
+    const binary = existsSync(folder) && readdirSync(folder).find(entry => entry.startsWith('ffmpeg'));
+    if (binary) return path.join(folder, binary);
+  }
+  return null;
+}
+const filters = new Map();
+/** Whether this FFmpeg was built with Rubber Band. The Windows build the engine installs is; others may not be. Asked once per binary. */
+export function supportsRubberband(ffmpeg) {
+  if (!filters.has(ffmpeg)) filters.set(ffmpeg, new Promise(resolve => {
+    let output = ''; const child = spawn(ffmpeg, ['-hide_banner', '-filters'], { windowsHide: true });
+    const timeout = setTimeout(() => child.kill(), 15000);
+    child.stdout.on('data', bytes => { output += bytes; });
+    child.on('error', () => { clearTimeout(timeout); filters.delete(ffmpeg); resolve(false); });
+    child.on('close', () => { clearTimeout(timeout); resolve(/rubberband/.test(output)); });
+  }));
+  return filters.get(ffmpeg);
+}
+/** FFmpeg arguments that move the pitch by whole semitones with Rubber Band, keep the tempo, and end at exactly the input's length. */
+export function transposeArgs(input, output, semitones, samples) {
+  // Rubber Band can end a few milliseconds short; padding and then cutting at the input's sample count keeps lyrics and notes in place.
+  const chain = `aresample=${RATE},rubberband=pitch=${(2 ** (semitones / 12)).toFixed(8)}:pitchq=quality:channels=together,apad,atrim=end_sample=${samples}`;
+  return ['-nostdin', '-v', 'error', '-y', '-i', input, '-af', chain, '-ac', '2', '-c:a', 'pcm_s16le', output];
+}
+/** Drops the least recently used transpositions once the cache passes its size, and inputs abandoned by a crash. */
+export async function pruneTransposed(limit = TRANSPOSE_CACHE_BYTES, directory = transposedRoot) {
+  const entries = [];
+  for (const name of await readdir(directory).catch(() => [])) {
+    const file = path.join(directory, name), info = await stat(file).catch(() => null);
+    if (!info?.isFile()) continue;
+    if (name.endsWith('.input') && Date.now() - info.mtimeMs > 3600000) await rm(file, { force: true }).catch(() => {});
+    else if (/^[a-f0-9]{64}_[+-]\d_\d+\.wav$/.test(name)) entries.push({ file, size: info.size, used: info.mtimeMs });
+  }
+  let total = entries.reduce((sum, entry) => sum + entry.size, 0);
+  for (const entry of entries.sort((a, b) => a.used - b.used)) {
+    if (total <= limit * .75) break;
+    await rm(entry.file, { force: true }).then(() => { total -= entry.size; }).catch(() => {});
+  }
+  return total;
+}
 export function terminateProcess(child) {
   if (!child?.pid) return;
   if (process.platform === 'win32') {
@@ -99,6 +148,50 @@ export function preparationPlugin() {
     for (const job of jobs.values()) if (!job.child && active !== job.id && Date.now() - job.created > 2 * 3600000) { jobs.delete(job.id); void discard(job); }
   }, 60000); cleanup.unref();
   void sweepStaleJobs();
+  void pruneTransposed();
+
+  // One transposition at a time: each one keeps a CPU core busy for a few seconds per minute of audio.
+  let transposing = Promise.resolve(), transposer = null;
+  async function transpose(req, res, json) {
+    const ffmpeg = findFfmpeg();
+    if (!ffmpeg) return json({ error: 'El cambio de tono necesita el motor local de audio. Ejecuta npm run audio:setup en la carpeta del proyecto.' }, 503);
+    if (!await supportsRubberband(ffmpeg)) return json({ error: 'El FFmpeg de este equipo no incluye Rubber Band, que es lo que cambia el tono.' }, 503);
+    const hash = req.headers['x-audio-sha256'], semitones = Number(req.headers['x-semitones']), samples = Number(req.headers['x-samples']), length = Number(req.headers['content-length']);
+    if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) return json({ error: 'Falta la identificación del audio.' }, 400);
+    if (!Number.isInteger(semitones) || !semitones || Math.abs(semitones) > 6) return json({ error: 'El tono se puede mover de −6 a +6 semitonos.' }, 400);
+    if (!Number.isInteger(samples) || samples < RATE || samples > RATE * 601) return json({ error: 'La duración indicada no es válida.' }, 400);
+    if (!Number.isFinite(length) || length <= 0 || length > TRANSPOSE_BYTES) return json({ error: 'El audio debe ocupar hasta 128 MB.' }, 413);
+    await mkdir(transposedRoot, { recursive: true });
+    const cached = path.join(transposedRoot, `${hash}_${semitones > 0 ? '+' : '-'}${Math.abs(semitones)}_${samples}.wav`);
+    if (existsSync(cached)) { req.resume(); await new Promise(resolve => { req.on('end', resolve); req.on('error', resolve); }); }
+    else {
+      const id = randomUUID(), input = path.join(transposedRoot, `${id}.input`), output = path.join(transposedRoot, `${id}.wav`);
+      try {
+        const digest = createHash('sha256'), file = createWriteStream(input); let received = 0;
+        for await (const chunk of req) { received += chunk.length; if (received > TRANSPOSE_BYTES) throw new Error('Archivo demasiado grande.'); digest.update(chunk); if (!file.write(chunk)) await new Promise(resolve => file.once('drain', resolve)); }
+        await new Promise((resolve, reject) => { file.on('error', reject); file.end(resolve); });
+        if (digest.digest('hex') !== hash) return json({ error: 'El audio recibido no coincide con el indicado.' }, 400);
+        const task = transposing.catch(() => {}).then(() => new Promise((resolve, reject) => {
+          if (res.destroyed) return reject(new Error('Petición cancelada.'));
+          const child = spawn(ffmpeg, transposeArgs(input, output, semitones, samples), { windowsHide: true }); let tail = '';
+          transposer = child;
+          const abandon = () => terminateProcess(child); res.once('close', abandon);
+          child.stderr.on('data', bytes => { tail = (tail + bytes).slice(-2000); });
+          child.on('error', reject);
+          child.on('close', code => { res.off('close', abandon); transposer = null; code === 0 ? resolve() : reject(new Error(`No se pudo cambiar el tono. ${tail.trim().split('\n').at(-1) || ''}`.trim())); });
+        }));
+        transposing = task;
+        await task;
+        await rename(output, cached);
+      } finally { await rm(input, { force: true }).catch(() => {}); await rm(output, { force: true }).catch(() => {}); }
+      void pruneTransposed();
+    }
+    if (res.destroyed) return;
+    const info = await stat(cached), now = new Date();
+    await utimes(cached, now, now).catch(() => {});
+    res.statusCode = 200; res.setHeader('Content-Type', 'audio/wav'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Length', info.size);
+    const stream = createReadStream(cached); stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
+  }
 
   const middleware = async (req, res, next) => {
     const url = new URL(req.url || '/', 'http://localhost');
@@ -107,7 +200,10 @@ export function preparationPlugin() {
     if (!validLocalRequest(req)) return json({ error: 'La preparación solo se permite desde esta aplicación local.' }, 403);
     try {
       if (url.pathname === '/api/preparation/status' && req.method === 'GET') return json({ ...await checkRuntime(), token, active: active ? publicJob(jobs.get(active)) : null });
+      // Moving a key needs only FFmpeg, not the Python check the status waits for.
+      if (url.pathname === '/api/preparation/transpose' && req.method === 'GET') { const ffmpeg = findFfmpeg(); return json({ available: !!ffmpeg && await supportsRubberband(ffmpeg), token }); }
       if (req.headers['x-encore-token'] !== token) return json({ error: 'La sesión del motor cambió. Actualiza su estado y vuelve a intentar.' }, 403);
+      if (url.pathname === '/api/preparation/transpose' && req.method === 'POST') return await transpose(req, res, json);
       if (['/api/preparation/jobs', '/api/preparation/analysis'].includes(url.pathname) && req.method === 'POST') {
         const analysisOnly = url.pathname === '/api/preparation/analysis';
         const limit = analysisOnly ? 128 * 1024 * 1024 : MAX_BYTES;
@@ -151,6 +247,6 @@ export function preparationPlugin() {
       const stream = createReadStream(file); stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
     } catch (error) { if (!res.headersSent && !res.destroyed) json({ error: error.message || 'No se pudo preparar la canción.' }, 500); }
   };
-  const configure = server => { server.middlewares.use(middleware); server.httpServer?.once('close', () => { clearInterval(cleanup); for (const job of jobs.values()) { job.state = 'cancelled'; terminateProcess(job.child); } }); };
+  const configure = server => { server.middlewares.use(middleware); server.httpServer?.once('close', () => { clearInterval(cleanup); terminateProcess(transposer); for (const job of jobs.values()) { job.state = 'cancelled'; terminateProcess(job.child); } }); };
   return { name: 'encore-preparation', configureServer: configure, configurePreviewServer: configure };
 }

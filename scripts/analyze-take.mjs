@@ -12,6 +12,7 @@ import { detectPitch } from '../public/audio/dsp.js';
 import { DIFFICULTIES, ScoreTracker } from '../src/scoring.ts';
 import { LevelStats, levelGate } from '../src/capture.ts';
 import { frequencyOf, midiOf } from '../src/song.ts';
+import { recordingReference } from '../src/voice-reference.ts';
 
 const numbers = text => text ? text.split(',').map(Number) : [];
 const median = values => { const sorted = [...values].sort((a, b) => a - b); return sorted.length ? sorted[sorted.length >> 1] : NaN; };
@@ -70,8 +71,8 @@ export function chartOf(result, prepared, unsung = []) {
 /** The silence gate the take's own levels call for. */
 export function gateOf(readings) { const stats = new LevelStats(); for (const reading of readings) stats.add(reading.rms); return { gate: levelGate(stats.idle, stats.voice), idle: stats.idle, voice: stats.voice }; }
 
-export function score(chart, readings, difficulty, gate, shift = 0) {
-  const tracker = new ScoreTracker(chart, difficulty, gate);
+export function score(chart, readings, difficulty, gate, shift = 0, ceiling = undefined) {
+  const tracker = new ScoreTracker(chart, difficulty, gate, ceiling);
   for (const reading of readings) tracker.sample(reading.time - shift, reading.span, reading.frequency, reading.confidence, reading.rms);
   return tracker.summary(Infinity);
 }
@@ -122,13 +123,20 @@ function report(file, options) {
   for (let from = 0; from < (result.reference?.audioDuration || 0); from += 20) { const here = against.filter(pair => pair.time >= from && pair.time < from + 20); if (here.length > 40) console.log(`      ${clock(from)}–${clock(from + 20)}  ${String(Math.round(median(here.map(pair => pair.cents)))).padStart(5)} cents · ${share(here, pair => Math.abs(pair.cents) <= 50)} %`); }
 
   if (!options.prepared || !existsSync(join(options.prepared, 'vocals.wav'))) { console.log('\nSin --prepared no se puede comparar con la voz original.'); return; }
+  // Since encore-intonation-5 the saved chart is in the key the take was sung; the recording is always in its own key.
+  const key = Number(String(result.scoringVersion).split('-').at(-1)) >= 5 && result.reference?.chart ? result.transpose || 0 : 0;
+  const recordingChart = key ? chart.map(note => ({ ...note, midi: note.midi - key })) : chart;
   const original = wavReadings(readWav(join(options.prepared, 'vocals.wav'))), originalGate = gateOf(original).gate;
-  const tones = original.filter(reading => reading.frequency && reading.rms >= originalGate).map(reading => ({ start: reading.time, end: reading.time, midi: midiOf(reading.frequency) }));
-  console.log(`\nLA VOZ ORIGINAL AISLADA (${tones.length} lecturas con tono; ${share(tones, tone => tone.midi < 48)} % por debajo de Do3, donde suele colarse el bajo)`);
-  for (const difficulty of Object.keys(DIFFICULTIES)) { const s = score(chart, original, difficulty, originalGate); console.log(`  ${DIFFICULTIES[difficulty].label.padEnd(9)} ${String(s.score).padStart(5)} puntos${s.rawScore !== undefined && s.rawScore !== s.score ? ` (${s.rawScore} sin ajustar)` : ''} · cobertura ${s.coverage} % · afinación ${s.intonation} %`); }
+  const tones = original.filter(reading => reading.frequency && reading.rms >= originalGate).map(reading => ({ start: reading.time, end: reading.time, midi: midiOf(reading.frequency) + key }));
+  console.log(`\nLA VOZ ORIGINAL AISLADA (${tones.length} lecturas con tono; ${share(tones, tone => tone.midi - key < 48)} % por debajo de Do3, donde suele colarse el bajo)`);
+  for (const difficulty of Object.keys(DIFFICULTIES)) {
+    const s = score(recordingChart, original, difficulty, originalGate), reference = recordingReference(recordingChart, original, difficulty), take = score(chart, readings, difficulty, gate, 0, reference.ceiling);
+    const scale = DIFFICULTIES[difficulty].ceiling === 1 ? 'Estricta no cambia de escala' : reference.usable ? `en la escala de esta grabación la toma vale ${take.score}` : 'no sirve de referencia: la toma sigue en la escala general';
+    console.log(`  ${DIFFICULTIES[difficulty].label.padEnd(9)} ${String(s.rawScore).padStart(5)} sobre el máximo teórico · cobertura ${s.coverage} % · afinación ${s.intonation} % · ${scale}`);
+  }
   console.log('\nLA VOZ DE LA TOMA FRENTE A LA VOZ ORIGINAL, sin pasar por el mapa');
-  describe('En el mismo instante, ±100 ms', differences(voiced, tones.filter(tone => tone.midi >= 48), .1));
-  const chance = [13.7, 27.3, -19.1, 41.9].map(shift => share(differences(voiced.map(reading => ({ ...reading, time: reading.time + shift })), tones.filter(tone => tone.midi >= 48), .1), pair => Math.abs(pair.cents) <= 50));
+  describe('En el mismo instante, ±100 ms', differences(voiced, tones.filter(tone => tone.midi - key >= 48), .1));
+  const chance = [13.7, 27.3, -19.1, 41.9].map(shift => share(differences(voiced.map(reading => ({ ...reading, time: reading.time + shift })), tones.filter(tone => tone.midi - key >= 48), .1), pair => Math.abs(pair.cents) <= 50));
   console.log(`    al azar (contra otra parte de la canción): ${Math.round(chance.reduce((a, b) => a + b, 0) / chance.length)} % en la nota`);
 }
 

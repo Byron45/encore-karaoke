@@ -36,7 +36,8 @@ test('import, validate, persist and sing a real file with a two-phrase map', asy
   await page.screenshot({ path: 'artifacts/etapa-2-biblioteca.png', fullPage: true });
   await page.getByRole('button', { name: 'Guardar y cantar' }).click();
   await expect(page.locator('.track-heading h2')).toHaveText('mi-prueba');
-  await expect(page.getByRole('combobox', { name: 'Registro de práctica' })).toBeDisabled();
+  // An audio file changes key on the local server instead of jumping an octave.
+  await expect(page.getByRole('combobox', { name: 'Tono de la canción' })).toHaveValue('0');
   await expect(page.locator('.reference-note')).toContainText('Do4');
   await page.getByRole('button', { name: 'Empezar a cantar' }).click();
   await expect(page.locator('.result-panel')).toBeVisible({ timeout: 13000 });

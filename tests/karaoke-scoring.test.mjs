@@ -10,6 +10,7 @@ import { phrasesOf, playable, sungNotes, validateNotes } from '../src/library-mo
 import { LEVEL_GATE, MIN_LEVEL_GATE, tuningReading } from '../src/pitch-reference.ts';
 import { frequencyOf, song } from '../src/song.ts';
 import { sweepStaleJobs } from '../server/preparation.mjs';
+import { MIN_RECORDING_SHARE, recordingReference } from '../src/voice-reference.ts';
 import { detectPitch } from '../public/audio/dsp.js';
 
 const HOP = 0.0213;
@@ -72,7 +73,7 @@ test('each difficulty has its own tolerance and a wrong note earns nothing in an
 test('strict is the previous scoring rule and the default of the tracker', () => {
   const voice = (note, time) => note.midi + .6 * Math.sin(time * 3);
   assert.deepEqual(sing(song.notes, undefined, voice).summary, sing(song.notes, 'strict', voice).summary);
-  assert.equal(new ScoreTracker(song.notes).summary(0).scoringVersion, 'encore-intonation-4');
+  assert.equal(new ScoreTracker(song.notes).summary(0).scoringVersion, 'encore-intonation-5');
   assert.deepEqual(DIFFICULTIES.strict, { label: 'Estricta', full: 35, zero: 100, foldOctaves: false, nominal: false, timing: 0, ceiling: 1 });
 });
 
@@ -303,6 +304,29 @@ test('the result says how the take went and, when the voice leans one way, which
   assert.equal(performanceFeedback(take(300)).title, 'El tono detectado tuvo poca coincidencia con la referencia.');
   const mixed = sing(song.notes, 'normal', note => note.midi + (song.notes.indexOf(note) % 2 ? .9 : -.9)).summary;
   assert.doesNotMatch(performanceFeedback(mixed).detail, /más grave|más agudo/);
+});
+
+test("the recording's own voice sets the scale of a prepared song; a voice read poorly leaves the general one", () => {
+  // An isolated voice in tune that has pitch in a given share of every note, and near silence between notes.
+  const isolated = share => { const list = []; let i = 0; for (let time = 0; time < 32; time += HOP) { const note = noteAt(song.notes, time), voiced = note && i++ % 20 < share * 20; list.push({ time, span: HOP, frequency: voiced ? frequencyOf(note.midi) : null, confidence: 1, rms: voiced ? .1 : .0005 }); } return list; };
+  const clean = recordingReference(song.notes, isolated(.95), 'normal');
+  assert.ok(clean.usable); assert.ok(clean.ceiling > .9 && clean.ceiling < .97, `ceiling ${clean.ceiling}`); assert.equal(clean.score, 10000);
+  assert.equal(clean.rawScore, Math.round(clean.ceiling * 10000));
+  // A take on that scale: the recording is the top, and the same credit is worth less than on the general scale.
+  const take = difficulty => { const tracker = new ScoreTracker(song.notes, difficulty, LEVEL_GATE, clean.ceiling); for (const reading of isolated(.8)) tracker.sample(reading.time, reading.span, reading.frequency, 1, reading.rms); return tracker.summary(32); };
+  const scaled = take('normal');
+  assert.equal(scaled.ceiling, clean.ceiling); assert.ok(Math.abs(scaled.score - scaled.rawScore / clean.ceiling) <= 1);
+  assert.ok(scaled.score < Math.round(scaled.rawScore / VOICE_CEILING), `${scaled.score} on the recording's scale`);
+  // The offset suggestion is worded on the same scale as the take.
+  const late = isolated(.8).map(reading => ({ ...reading, time: reading.time + .15 }));
+  const suggestion = estimateOffset(song.notes, late, 0, 'normal', LEVEL_GATE, clean.ceiling);
+  assert.ok(Math.abs(suggestion.offsetMs - 150) <= 20, `offset ${suggestion.offsetMs}`); assert.ok(Math.abs(suggestion.score - scaled.score) <= 150, `${suggestion.score} vs ${scaled.score}`);
+  // Bass or instruments left in the voice by the separation: the recording is not a fair top, the general scale stays.
+  const poor = recordingReference(song.notes, isolated(MIN_RECORDING_SHARE - .1), 'relaxed');
+  assert.equal(poor.usable, false); assert.equal(poor.ceiling, VOICE_CEILING); assert.ok(poor.score < 10000);
+  // Estricta keeps its tuner scale and only reports what the recording earns.
+  const strict = recordingReference(song.notes, isolated(.95), 'strict');
+  assert.equal(strict.ceiling, 1); assert.equal(strict.score, strict.rawScore);
 });
 
 test('the downloaded result carries the pitch trace as compact text and never the readings or any audio', () => {
