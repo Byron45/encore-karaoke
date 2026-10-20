@@ -321,9 +321,12 @@ test("the recording's own voice sets the scale of a prepared song; a voice read 
   const late = isolated(.8).map(reading => ({ ...reading, time: reading.time + .15 }));
   const suggestion = estimateOffset(song.notes, late, 0, 'normal', LEVEL_GATE, clean.ceiling);
   assert.ok(Math.abs(suggestion.offsetMs - 150) <= 20, `offset ${suggestion.offsetMs}`); assert.ok(Math.abs(suggestion.score - scaled.score) <= 150, `${suggestion.score} vs ${scaled.score}`);
-  // Bass or instruments left in the voice by the separation: the recording is not a fair top, the general scale stays.
+  // Bass or instruments left in the voice by the separation must not make the scale more lenient: it stops at a floor,
+  // and a recording just below it lands on nearly the same scale as one just above.
   const poor = recordingReference(song.notes, isolated(MIN_RECORDING_SHARE - .1), 'relaxed');
-  assert.equal(poor.usable, false); assert.equal(poor.ceiling, VOICE_CEILING); assert.ok(poor.score < 10000);
+  assert.equal(poor.usable, false); assert.equal(poor.ceiling, MIN_RECORDING_SHARE); assert.ok(poor.score < 10000);
+  const below = recordingReference(song.notes, isolated(MIN_RECORDING_SHARE - .01), 'relaxed'), above = recordingReference(song.notes, isolated(MIN_RECORDING_SHARE + .03), 'relaxed');
+  assert.ok(above.usable && above.ceiling - below.ceiling < .05, `${below.ceiling} → ${above.ceiling}`);
   // Estricta keeps its tuner scale and only reports what the recording earns.
   const strict = recordingReference(song.notes, isolated(.95), 'strict');
   assert.equal(strict.ceiling, 1); assert.equal(strict.score, strict.rawScore);

@@ -1,10 +1,11 @@
 import type { Note } from './song.ts';
 import type { Difficulty, Reading } from './scoring.ts';
-import { DIFFICULTIES, ScoreTracker, VOICE_CEILING } from './scoring.ts';
+import { DIFFICULTIES, ScoreTracker } from './scoring.ts';
 import { LevelStats, levelGate } from './capture.ts';
 
-// Below this share of the theoretical maximum the isolated voice is read too poorly to stand for the recording:
-// what is missing is the separation's doing (bass or instruments left in the voice), not the singer's.
+// The scale never goes below this share of the theoretical maximum. A recording read worse than this owes it mostly to
+// the separation or the map (bass, instruments or other voices in the isolated voice), which must not make the scale more
+// lenient. A floor rather than a switch to another scale: a song read at 74 % and one at 76 % end up on nearly the same scale.
 export const MIN_RECORDING_SHARE = .75;
 
 /** What the song's own isolated voice earns under one difficulty, and the scale a take is scored on because of it. */
@@ -14,7 +15,7 @@ export interface RecordingReference {
   rawScore: number; score: number;
   // Share of the theoretical maximum worth 10,000 for the take.
   ceiling: number;
-  // Whether the recording set the scale; otherwise the general one is used.
+  // Whether the recording set the scale on its own; otherwise the scale stops at MIN_RECORDING_SHARE.
   usable: boolean;
 }
 
@@ -25,7 +26,7 @@ export function recordingReference(chart: Note[], readings: Reading[], difficult
   const tracker = new ScoreTracker(chart, difficulty, levelGate(stats.idle, stats.voice), 1);
   for (const reading of readings) tracker.sample(reading.time, reading.span, reading.frequency, reading.confidence, reading.rms);
   const share = tracker.summary(Infinity).rawScore / 10000, usable = share >= MIN_RECORDING_SHARE;
-  const ceiling = DIFFICULTIES[difficulty].ceiling < 1 ? usable ? share : VOICE_CEILING : 1;
+  const ceiling = DIFFICULTIES[difficulty].ceiling < 1 ? Math.max(share, MIN_RECORDING_SHARE) : 1;
   return { difficulty, rawScore: Math.round(share * 10000), score: Math.round(Math.min(1, share / ceiling) * 10000), ceiling, usable };
 }
 

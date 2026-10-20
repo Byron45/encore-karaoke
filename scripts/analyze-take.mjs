@@ -131,7 +131,7 @@ function report(file, options) {
   console.log(`\nLA VOZ ORIGINAL AISLADA (${tones.length} lecturas con tono; ${share(tones, tone => tone.midi - key < 48)} % por debajo de Do3, donde suele colarse el bajo)`);
   for (const difficulty of Object.keys(DIFFICULTIES)) {
     const s = score(recordingChart, original, difficulty, originalGate), reference = recordingReference(recordingChart, original, difficulty), take = score(chart, readings, difficulty, gate, 0, reference.ceiling);
-    const scale = DIFFICULTIES[difficulty].ceiling === 1 ? 'Estricta no cambia de escala' : reference.usable ? `en la escala de esta grabación la toma vale ${take.score}` : 'no sirve de referencia: la toma sigue en la escala general';
+    const scale = DIFFICULTIES[difficulty].ceiling === 1 ? 'Estricta no cambia de escala' : reference.usable ? `en la escala de esta grabación la toma vale ${take.score}` : `se lee peor de lo habitual: la escala se queda en el 75 % y la toma vale ${take.score}`;
     console.log(`  ${DIFFICULTIES[difficulty].label.padEnd(9)} ${String(s.rawScore).padStart(5)} sobre el máximo teórico · cobertura ${s.coverage} % · afinación ${s.intonation} % · ${scale}`);
   }
   console.log('\nLA VOZ DE LA TOMA FRENTE A LA VOZ ORIGINAL, sin pasar por el mapa');

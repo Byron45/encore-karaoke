@@ -8,7 +8,8 @@ export interface PitchSegment { start: number; duration: number; midi: number; c
 export interface StemDescriptor { file: string; sha256: string; bytes: number; sampleRate: number; samples: number; channels: number; duration: number; offsetSamples: number }
 export interface PreparationManifest {
   schemaVersion: number; originalSha256: string; duration: number; sampleRate: number; samples: number;
-  separator: { package: string; version: string; model: string };
+  // models: the two-pass separation since revision 2J; earlier preparations used a single model.
+  separator: { package: string; version: string; model: string; models?: { instrumental: string; vocals: string } };
   stems: Record<'vocals' | 'instrumental' | 'reduced', StemDescriptor>;
   alignment: { position: number; lagSeconds: number; correlation: number }[];
   reducedVocalGain: number; sharedGain: number;

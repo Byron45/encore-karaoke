@@ -205,7 +205,7 @@ La toma del usuario en «Primaveras», comparada instante a instante con la voz 
 **Escala de la grabación.** La revisión 2I descartó medir el techo canción por canción porque una voz separada sucia lo falseaba. Con el separador de voz la medida es fiable, y varía entre canciones (0,98 en «Primaveras», 0,83 en «Luz de Día»): el detector de la app no lee igual todas las voces. `src/voice-reference.ts` lee la voz aislada en un worker (`public/audio/voice-reference.js`, con el mismo encuadre que el worklet del micrófono; ~1 s por canción), la puntúa con el mismo mapa, las mismas reglas y su propio umbral de silencio, y ese resultado es el 10.000 de la canción en Relajada y Normal (`ScoreTracker` acepta un techo propio). Reglas:
 
 - La medida se toma con el mapa tal como se canta (sin las notas fuera de la letra) y en el tono original de la grabación.
-- Si la voz aislada no llega al 75 % del máximo teórico no se usa: esa falta es de la separación, no del cantante. Se aplica la escala general (85 %) y el resultado sugiere volver a separar. Es lo que pasa con las canciones preparadas con `Inst_HQ_3` como «Primaveras» (0,68).
+- Si la voz aislada no llega al 75 % del máximo teórico no se usa: esa falta es de la separación, no del cantante. Se aplica la escala general (85 %) y el resultado sugiere volver a separar. Es lo que pasa con las canciones preparadas con `Inst_HQ_3` como «Primaveras» (0,68). *Cambiado en 2K: ahora la escala tiene un piso del 75 % en vez de saltar a la general; véase esa sección.*
 - Sin pistas preparadas (mapa a mano, ejercicio incluido) también se usa la escala general.
 - Estricta no cambia de escala; el resultado informa de lo que obtiene la grabación.
 - La propuesta de retraso usa la misma escala que la toma.
@@ -223,6 +223,29 @@ Verificado: pruebas unitarias del filtro (altura, duración exacta, caché, perm
 **Ensayo por frases.** Mejora añadida con el margen que dejó el usuario. Cada frase del resultado tiene **Ensayar**: el motor (`phrase` en `KaraokeEngine`) evalúa solo las notas de esa frase y reproduce desde `PHRASE_LEAD_IN` (2 s) antes de su primera nota hasta 0,6 s después de la última, tras la cuenta atrás de siempre. La calibración (retraso, ruido, altavoces) y el umbral de silencio se toman respecto al inicio de ese tramo. El resultado dice qué frase se ensayó, ofrece repetirla o volver a la canción completa, no guarda marca y descarga solo las notas de esa frase (`phrase` en el documento). Con el tono cambiado se ensaya en ese tono.
 
 No comprobado: el cambio de tono con voz humana ni la calidad auditiva de Rubber Band en canciones completas a ±5 semitonos; la nueva escala con más canciones y cantantes.
+
+## Tomas del 19 de octubre, piso de la escala e historial · revisión 2K
+
+Dos resultados descargados, ambos en Relajada con la revisión 2J. Las pistas y mapas se regeneraron desde los MP3 del usuario (`artifacts/audio-que-distintos`, `artifacts/audio-kilometros`); en «Qué distintos tú y yo» las 467 notas cantadas coinciden con el mapa regenerado y la medida de la grabación coincide con la de la app (0,761 frente a 0,765).
+
+| | Qué distintos tú y yo | Kilómetros |
+| --- | --- | --- |
+| Puntos en la app | 7.026 (voz al 25 %) | 4.165 (voz original) |
+| La grabación sobre el máximo teórico, Relajada / Normal | 0,76 / 0,73 | 0,75 / 0,73 |
+| Tu voz frente a la del cantante, en el mismo instante: en la nota / mediana | 40 % / +4 cents | 30 % / −22 cents |
+| Media por frase | 85 % hasta el minuto 3:18; 18 % después | 40 % |
+
+**«Qué distintos tú y yo».** Hasta el minuto 3:18 la toma es buena y centrada, sin inclinación. Desde ahí el mapa y la voz original bajan a La3–Do4 y el usuario siguió una línea más aguda, alrededor de Re#4–Mi4 (de 3 a 4 semitonos por encima). No es un fallo del mapa: la voz principal de la grabación está donde dice el mapa.
+
+**«Kilómetros».** El mapa coincide con la voz original (en la nota del 54 % al 90 % según el tramo). El usuario canta casi siempre por debajo, de uno a cuatro semitonos en los tramos agudos. Puntuada contra el mapa movido, la toma encaja mejor un semitono abajo (Relajada: 5.045 frente a 4.454): es la canción para probar «Tono de la canción» en −1 o −2.
+
+**Piso de la escala.** Las dos grabaciones quedan en el filo del 75 %. En «Qué distintos tú y yo» Relajada (0,76) fijaba la escala y Normal (0,73) saltaba a la general del 85 %; «Kilómetros» (0,7494) también saltaba. Un salto así no tiene sentido entre dos medidas casi iguales y castigaba precisamente a las canciones peor leídas. Desde 2K el techo es `max(medida, 0,75)`: la escala sigue sin poder volverse más indulgente que el 75 % por una separación imperfecta, pero cambia de forma continua. El mensaje del resultado lo explica y solo sugiere volver a separar si las pistas son del separador anterior (`separator.models` ausente en el manifiesto). No se cambió `SCORING_VERSION` para no esconder las mejores marcas del usuario, que eran el único registro de las tomas que no descargó; solo cambian las canciones por debajo del 75 %, y cada resultado descargado incluye el techo con el que se puntuó.
+
+### Historial de intentos
+
+El usuario cantó varias canciones nuevas con la revisión 2J, notó que la puntuación subía y solo descargó dos resultados. Los demás se perdieron: el resultado existía solo en la pestaña. Las mejores marcas sí estaban guardadas; `scripts/mis-marcas.js`, pegado en la consola del navegador con la app abierta, las lista con el título de cada canción sin modificar nada.
+
+Desde 2K cada toma con micrófono y mapa de notas se guarda al terminar (`src/take-history.ts`) en una base IndexedDB propia, `encore-takes-v1`, separada de la biblioteca para no migrarla. Se guarda el mismo documento que da «Descargar resultado» (puntuación, trazo y mapa cantado; nunca audio), unos 150–200 kB por toma, y se conservan las 60 más recientes. «Tus intentos guardados», en el escenario, las lista (canción, fecha, exigencia, tono, ensayo de frase y puntos) para descargarlas o borrarlas una a una o todas. Las tomas de demostración no se guardan.
 
 ## Letras completas y canto libre
 

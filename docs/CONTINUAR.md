@@ -1,11 +1,19 @@
-# Punto de continuación · revisión 2J terminada
+# Punto de continuación · revisión 2K terminada
 
-## Última revisión: separador de voz, escala de la grabación y cambio de tono
+## Última revisión: tomas del 19 de octubre, piso de la escala e historial
+
+19 de octubre de 2026. El usuario cantó varias canciones con 2J (dice que la puntuación subió) y solo descargó dos resultados: «Kilómetros» (Los Caligaris, 4.165, voz original) y «Qué distintos tú y yo» (7.026, voz al 25 %). Pistas regeneradas en `artifacts/audio-kilometros` y `artifacts/audio-que-distintos`. Diagnóstico: en «Qué distintos» la toma es buena hasta 3:18 (85 % por frase) y después sigue una línea 3–4 semitonos más aguda que la voz principal; en «Kilómetros» canta por debajo y encajaría mejor un semitono abajo.
+
+Cambios 2K: la escala de la grabación tiene un piso continuo del 75 % en vez de saltar a la general del 85 % (sin cambiar `SCORING_VERSION`, para no esconder sus marcas); historial de los últimos 60 intentos en IndexedDB propia (`encore-takes-v1`) con descarga y borrado desde el escenario; `scripts/mis-marcas.js` lista las mejores marcas desde la consola del navegador. Detalle en `docs/NOTAS-TECNICAS.md`, sección 2K.
+
+Pendiente: que el usuario pruebe «Kilómetros» en −1/−2 y ensaye el final de «Qué distintos» con la voz al 25 %.
+
+## Revisión 2J: separador de voz, escala de la grabación y cambio de tono
 
 18 de octubre de 2026. El usuario aceptó las tres propuestas de 2I, autorizó descargar `Kim_Vocal_2.onnx` y dejó libertad para otras mejoras. Revisión 2J:
 
 - `prepare.py` separa en dos pasadas: instrumental con `Inst_HQ_3`, voz con `Kim_Vocal_2`. En «Primaveras» el bajo colado en la voz baja del 45 % al 1 % y el mapa pierde sus 51 notas instrumentales.
-- En canciones con pistas preparadas, 10.000 puntos son lo que obtiene la voz aislada de la grabación con las mismas reglas (`src/voice-reference.ts`). Si esa voz se lee mal (menos del 75 % del máximo) se usa la escala general del 85 %. `encore-intonation-5`; las marcas anteriores no se comparan.
+- En canciones con pistas preparadas, 10.000 puntos son lo que obtiene la voz aislada de la grabación con las mismas reglas (`src/voice-reference.ts`). La escala no baja del 75 % del máximo (desde 2K; antes, por debajo de ese valor se usaba la general del 85 %). `encore-intonation-5`; las marcas anteriores no se comparan.
 - Selector «Tono de la canción» (±5 semitonos) para canciones con audio: el servidor local mueve la pista con Rubber Band (`POST /api/preparation/transpose`, caché en `.local/audio/transposed`) y las notas se mueven con ella.
 - Ensayo por frases desde el resultado (botón «Ensayar»): solo esa frase, desde 2 s antes, sin marca.
 

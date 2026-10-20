@@ -19,6 +19,7 @@ Karaoke para practicar con tu propia música. Encore escucha tu voz por el micr�
 - **Puntuación respecto a la voz original.** En una canción preparada, 10.000 puntos son lo que obtiene la voz de la propia grabación medida con este mismo sistema.
 - **Ajustes que se adaptan a tu equipo.** Compensa el retraso de audio, ajusta la sensibilidad al nivel de tu micrófono y avisa si la música está entrando por él.
 - **Resultados explicados** por frase, con descarga en JSON, y **tu mejor marca** por canción y nivel de exigencia.
+- **Tus intentos guardados.** Cada canción que cantas con micrófono queda en el navegador (los últimos 60) para descargar su resultado más tarde, aunque no lo hayas descargado al terminar.
 - **Ensayo por frases.** Desde el resultado, repite solo la frase que se te resiste: suena desde un poco antes y solo cuentan sus notas.
 
 ![Editor de la biblioteca: letra completa y mapa de notas de una canción](docs/img/mapa-de-notas.png)
@@ -83,7 +84,8 @@ El margen de tiempo acepta una nota que entra un poco antes o se sostiene un poc
 **La escala.** Una voz real no suena con tono el 100 % del tiempo: las consonantes y las respiraciones no tienen nota. Por eso, en Relajada y Normal, 10.000 puntos no son el máximo teórico sino lo que alcanza una voz real:
 
 - **En una canción con pistas preparadas**, la app lee la voz aislada de la grabación con el mismo detector que tu micrófono y la puntúa con las mismas reglas. Lo que obtiene son los 10.000 puntos de esa canción. Medidas así, «Un Millón de Primaveras» llega al 98 % del máximo teórico y «Luz de Día» al 83 %: el detector no lee igual de bien todas las voces, y la escala lo compensa.
-- **Si esa voz aislada se lee mal** (menos del 75 % del máximo, señal de una separación sucia) o la canción no tiene pistas preparadas, se usa una escala general: 10.000 es el 85 % del máximo.
+- **La escala no baja del 75 % del máximo.** Una voz aislada que se lee peor suele llevar instrumentos u otras voces, y eso no debe volver la escala más indulgente. El paso es gradual: una grabación leída al 74 % y otra al 76 % quedan casi en la misma escala.
+- **Sin pistas preparadas** se usa una escala general: 10.000 es el 85 % del máximo.
 
 Estricta se queda en el máximo teórico. El resultado dice qué escala se usó y muestra también los puntos sin ajustar.
 
@@ -122,8 +124,8 @@ El mapa generado es **experimental**: puede cubrir solo parte de la canción, eq
 ## Privacidad
 
 - La voz se analiza en el navegador con un AudioWorklet. No se graba ni se sube.
-- El resultado que descargas incluye el trazo de afinación del intento (la nota detectada y el nivel en cada instante), no el sonido. Solo existe en la pestaña hasta que tú lo descargas.
-- La biblioteca vive en IndexedDB, en tu navegador, y tus ajustes y mejores marcas en su almacenamiento local. No hay cuentas ni copia en la nube: borrar los datos del sitio lo borra todo.
+- El resultado de cada intento incluye el trazo de afinación (la nota detectada y el nivel en cada instante), no el sonido. Se guarda en el navegador junto con los 59 intentos anteriores, en «Tus intentos guardados» del escenario, donde puedes descargarlos o borrarlos.
+- La biblioteca y tus intentos viven en IndexedDB, en tu navegador, y tus ajustes y mejores marcas en su almacenamiento local. No hay cuentas ni copia en la nube: borrar los datos del sitio lo borra todo.
 - El servidor local escucha solo en `127.0.0.1`. La preparación de audio comprueba además el origen de cada petición y un token de sesión.
 - Conexiones externas, todas iniciadas por una acción tuya salvo la primera:
   - Google Fonts, al cargar la página (hay tipografías locales de respaldo).
@@ -135,7 +137,7 @@ El mapa generado es **experimental**: puede cubrir solo parte de la canción, eq
 ```bash
 npm test             # 64 pruebas unitarias: detector, puntuación, mapas, letras, cambio de tono, servicios
 npm run build        # comprobación de tipos y compilación
-npm run test:browser # 42 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
+npm run test:browser # 43 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
 ```
 
 Las pruebas de navegador hacen pasar una voz sintética por el micrófono, el detector y la puntuación reales. No sustituyen una prueba con voz humana.
@@ -180,14 +182,14 @@ docs/           Notas técnicas, plan por etapas y evaluaciones
 - **El mapa automático es experimental** y suele quedar fragmentado en notas muy cortas.
 - **El cambio de tono necesita el servidor local** con el motor de audio instalado y llega a cinco semitonos; más allá la voz y los instrumentos suenan artificiales. Rubber Band puede adelantar o retrasar el sonido unos 20 ms, dentro del margen de tiempo de Relajada y Normal.
 - **Los servicios locales dependen de Vite** (`npm run dev` o `npm run preview`). Copiar solo `dist/` a un alojamiento estático no incluye las búsquedas ni la preparación.
-- **Solo se guarda la mejor marca** de cada canción y nivel. No hay historial de intentos, pausa ni cola de canciones.
+- **El historial guarda los últimos 60 intentos** con micrófono, sin gráficas de progreso. No hay pausa ni cola de canciones.
 
 ## Próximos pasos propuestos
 
 - [ ] Validar con voz real, auriculares y varios micrófonos.
 - [ ] Mejorar el mapa automático: unir notas fragmentadas y obtener tiempos por sílaba.
 - [ ] Importar mapas hechos a mano.
-- [ ] Historial de intentos, pausa y cola de canciones.
+- [ ] Progreso a lo largo de los intentos, pausa y cola de canciones.
 - [ ] Copia de seguridad de la biblioteca y guardado que no reescriba el audio en cada cambio.
 - [ ] Formateador, linter e integración continua.
 
