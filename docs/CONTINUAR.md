@@ -6,6 +6,8 @@
 
 Cambios 2K: la escala de la grabación tiene un piso continuo del 75 % en vez de saltar a la general del 85 % (sin cambiar `SCORING_VERSION`, para no esconder sus marcas); historial de los últimos 60 intentos en IndexedDB propia (`encore-takes-v1`) con descarga y borrado desde el escenario; `scripts/mis-marcas.js` lista las mejores marcas desde la consola del navegador. Detalle en `docs/NOTAS-TECNICAS.md`, sección 2K.
 
+Después, a petición del usuario (la preparación le tardaba 10–15 min): el análisis de la melodía se reparte en 4 procesos de 4 hilos; «Kilómetros» pasa de 426 s a 311 s con resultado idéntico. Separar en paralelo no compensa. La aceleración con la GPU (RTX 5050) necesita unos 3 GB de descargas y espera su permiso, igual que la evaluación de la letra con reconocimiento de voz.
+
 Pendiente: que el usuario pruebe «Kilómetros» en −1/−2 y ensaye el final de «Qué distintos» con la voz al 25 %.
 
 ## Revisión 2J: separador de voz, escala de la grabación y cambio de tono

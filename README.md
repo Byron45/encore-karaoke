@@ -115,6 +115,8 @@ npm run audio:setup
 
 Crea un entorno aislado en `.venv-audio` con Python 3.11 y dependencias fijadas. Todo el procesamiento se hace por CPU en tu equipo.
 
+Con un procesador de 16 núcleos, preparar una canción de 3 minutos tarda unos 5: unos 3 de separación y 2 del mapa de notas, que se reparte en cuatro procesos.
+
 La separación hace dos pasadas, cada una con el modelo entrenado para lo que se queda: UVR-MDX-NET-Inst_HQ_3 para el instrumental y Kim_Vocal_2 para la voz. La voz aislada es la base del mapa de notas y de la escala, y con el modelo de voz sale mucho más limpia: en una de las canciones de prueba, el bajo que se colaba en ella pasó del 45 % de las lecturas con tono al 1 %. El primer uso descarga los dos modelos (unos 134 MB). El mismo motor instala FFmpeg, que cambia el tono de las canciones con Rubber Band. En Windows la versión que instala ya lo incluye; en otros sistemas la app comprueba si lo tiene y, si no, deja desactivado el cambio de tono.
 
 Las canciones preparadas antes de esta versión conservan sus pistas. Para usar la voz nueva, vuelve a separarlas desde la biblioteca.

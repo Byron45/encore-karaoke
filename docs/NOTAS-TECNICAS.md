@@ -241,6 +241,25 @@ Dos resultados descargados, ambos en Relajada con la revisión 2J. Las pistas y 
 
 **Piso de la escala.** Las dos grabaciones quedan en el filo del 75 %. En «Qué distintos tú y yo» Relajada (0,76) fijaba la escala y Normal (0,73) saltaba a la general del 85 %; «Kilómetros» (0,7494) también saltaba. Un salto así no tiene sentido entre dos medidas casi iguales y castigaba precisamente a las canciones peor leídas. Desde 2K el techo es `max(medida, 0,75)`: la escala sigue sin poder volverse más indulgente que el 75 % por una separación imperfecta, pero cambia de forma continua. El mensaje del resultado lo explica y solo sugiere volver a separar si las pistas son del separador anterior (`separator.models` ausente en el manifiesto). No se cambió `SCORING_VERSION` para no esconder las mejores marcas del usuario, que eran el único registro de las tomas que no descargó; solo cambian las canciones por debajo del 75 %, y cada resultado descargado incluye el techo con el que se puntuó.
 
+### Preparación más rápida
+
+El usuario notó que preparar una canción tarda de 10 a 15 minutos. Medido en su equipo (Intel i7-14650HX, 16 núcleos y 24 hilos) con «Kilómetros», 193 s de audio: 426 s en total. CREPE «full» se llevaba 212 s y pYIN 39 s; cada pasada de separación unos 90 s. El motor limitaba el análisis a 4 hilos, y darle 12 a un solo proceso apenas ayudaba (188 s): CREPE no aprovecha más hilos en un mismo proceso.
+
+Los tramos de 20 s del análisis son independientes (cada uno lleva un segundo de contexto a cada lado), así que ahora se reparten en 4 procesos de 4 hilos (`melody_frames.WORKERS`, `THREADS`). Con 4 hilos por tramo, como antes, el resultado es idéntico bit a bit; 6 procesos de 3 hilos ganan muy poco más con diferencias numéricas mínimas, y 8 de 2 resultan más lentos (231 s).
+
+| Variante del análisis | Tiempo | Diferencia con el resultado anterior |
+| --- | --- | --- |
+| Un proceso, 4 hilos (antes) | 272 s | — |
+| 4 procesos × 4 hilos (ahora) | 130 s | ninguna |
+| 6 procesos × 3 hilos | 125 s | 0,0004 Hz como máximo |
+| 8 procesos × 2 hilos | 231 s | 0,0004 Hz como máximo |
+
+Las dos pasadas de separación a la vez no compensan: ONNX Runtime ya ocupa todos los núcleos con una sola (90 s), y en paralelo tardan 260 s con sus hilos por defecto o 167 s limitadas a 8 hilos cada una, frente a 180 s una tras otra. Se descartó.
+
+Resultado: «Kilómetros» pasa de 426 s a 311 s, con las tres pistas y las 491 notas del mapa idénticas a la preparación anterior. Pasan `tests/audio-service-check.mjs` y `tests/analysis-service-check.mjs` con los modelos reales.
+
+Lo que queda es lo que ningún reparto en el procesador acelera: separar y analizar con la GPU (una RTX 5050 en este equipo) bajaría la preparación a alrededor de un minuto, pero requiere instalar PyTorch y ONNX Runtime con CUDA (unos 3 GB). Pendiente del permiso del usuario.
+
 ### Historial de intentos
 
 El usuario cantó varias canciones nuevas con la revisión 2J, notó que la puntuación subía y solo descargó dos resultados. Los demás se perdieron: el resultado existía solo en la pestaña. Las mejores marcas sí estaban guardadas; `scripts/mis-marcas.js`, pegado en la consola del navegador con la app abierta, las lista con el título de cada canción sin modificar nada.
