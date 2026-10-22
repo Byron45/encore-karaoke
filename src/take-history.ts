@@ -47,5 +47,13 @@ export async function saveTake(take: Omit<StoredTake, 'id'>) {
   return id;
 }
 
+/** Replaces a kept take, for instance once its lyrics have been checked. Does nothing if it was deleted meanwhile. */
+export async function updateTake(id: string, take: Omit<StoredTake, 'id'>) {
+  await run('readwrite', store => {
+    const existing = store.get(id);
+    existing.onsuccess = () => { if (existing.result) store.put({ ...take, id }); };
+  });
+}
+
 export async function deleteTake(id: string) { await run('readwrite', store => store.delete(id)); }
 export async function clearTakes() { await run('readwrite', store => store.clear()); }

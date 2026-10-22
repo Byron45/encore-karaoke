@@ -20,7 +20,7 @@ Karaoke para practicar con tu propia música. Encore escucha tu voz por el micr�
 - **Evaluación de la letra (experimental).** Si la activas, tu computadora reconoce lo que cantas con Whisper y lo compara con la letra sincronizada, línea por línea: «dice "más que", se oyó "como"». Resta hasta un 20 % de los puntos.
 - **Ajustes que se adaptan a tu equipo.** Compensa el retraso de audio, ajusta la sensibilidad al nivel de tu micrófono y avisa si la música está entrando por él.
 - **Resultados explicados** por frase, con descarga en JSON, y **tu mejor marca** por canción y nivel de exigencia.
-- **Tus intentos guardados.** Cada canción que cantas con micrófono queda en el navegador (los últimos 60) para descargar su resultado más tarde, aunque no lo hayas descargado al terminar.
+- **Tus intentos guardados.** Cada canción que cantas con micrófono queda en el navegador en cuanto termina (los últimos 60) para descargar su resultado más tarde, aunque no lo hayas descargado al terminar.
 - **Ensayo por frases.** Desde el resultado, repite solo la frase que se te resiste: suena desde un poco antes y solo cuentan sus notas.
 
 ![Editor de la biblioteca: letra completa y mapa de notas de una canción](docs/img/mapa-de-notas.png)

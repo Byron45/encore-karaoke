@@ -266,6 +266,17 @@ El usuario cantó varias canciones nuevas con la revisión 2J, notó que la punt
 
 Desde 2K cada toma con micrófono y mapa de notas se guarda al terminar (`src/take-history.ts`) en una base IndexedDB propia, `encore-takes-v1`, separada de la biblioteca para no migrarla. Se guarda el mismo documento que da «Descargar resultado» (puntuación, trazo y mapa cantado; nunca audio), unos 150–200 kB por toma, y se conservan las 60 más recientes. «Tus intentos guardados», en el escenario, las lista (canción, fecha, exigencia, tono, ensayo de frase y puntos) para descargarlas o borrarlas una a una o todas. Las tomas de demostración no se guardan.
 
+## Tomas del 21 de octubre y guardado inmediato · revisión 2M
+
+El usuario añadió canciones con el motor en la gráfica («ya no se demora tanto») y envió tres tomas en Relajada, ninguna con la letra evaluada: «Todo lo que fue» 7.930 (voz original), «Arrancacorazones» 7.772 (voz original) y «Luz de día» 6.607 (voz al 25 %; antes 6.562 con las pistas del separador anterior). Las tres grabaciones fijan su propia escala (0,87–0,89). Las frases más bajas son de dos tipos: tramos con poca señal (no cantados) y frases cantadas unos 3 semitonos por encima del mapa («Todo lo que fue» en 0:43 y 2:12, «Luz de día» en 3:38), como el final de «Qué distintos tú y yo».
+
+El usuario notó que de tres canciones solo se guardó la primera en el historial. No se reprodujo: tres canciones nuevas seguidas, con y sin pistas preparadas, dejan tres intentos. Sí había dos debilidades que lo explican:
+
+- Con **Evaluar la letra** activado, la toma se guardaba al terminar el reconocimiento. El primero de cada canción preparada reconoce también su voz aislada, y si el análisis no terminaba, la toma no se guardaba.
+- Un fallo al guardar se descartaba en silencio.
+
+Ahora cada toma con micrófono se guarda en cuanto termina la canción, con los puntos de la melodía. Cuando el análisis de la letra termina, la misma entrada se reemplaza (`updateTake`). El análisis tiene un máximo de 5 minutos, y un fallo al guardar se muestra con la sugerencia de descargar el resultado. La prueba de la letra cubre un reconocedor que no contesta. `scripts/mis-intentos.js` lista desde la consola del navegador lo que hay en el historial; tanto esta consulta como `mis-marcas.js` cancelan la creación de la base si no existe, porque crearla vacía impediría a la app crear su estructura.
+
 ## Gráfica NVIDIA y evaluación de la letra · revisión 2L
 
 El usuario autorizó las descargas propuestas: acelerar el motor con su gráfica (NVIDIA GeForce RTX 5050 Laptop, 8 GB, controlador con CUDA 13.4) y reconocer la letra cantada.

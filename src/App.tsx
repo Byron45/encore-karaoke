@@ -22,7 +22,7 @@ import { useMicrophones } from './useMicrophones';
 import { MicrophonePanel } from './MicrophonePanel';
 import { PhraseReview } from './PhraseReview';
 import { TakeHistory } from './TakeHistory';
-import { saveTake } from './take-history';
+import { saveTake, updateTake } from './take-history';
 import { canTranspose, KEY_STEPS, keyLabel, transposedAudio } from './transpose';
 import { recordingReference, voiceReadings } from './voice-reference';
 import type { RecordingReference } from './voice-reference';
@@ -244,26 +244,35 @@ export default function App() {
     }, final => {
       if (engine.current !== instance) return;
       engine.current = null; setStatus('finished'); setResult(final); updateSession(info => ({ ...info, offsetMs: final.capture?.offsetMs ?? info.offsetMs }));
-      const settle = (take: Summary, shown = true) => {
-        // Kept in this browser so a result that was not downloaded is not lost.
-        if (nextMode === 'microphone' && song.notes.length) void saveTake({ createdAt: new Date().toISOString(), songId: songKey, song: song.title, difficulty: take.difficulty, score: take.score, transpose: session.current.transpose, ...(phrase === undefined ? {} : { phrase }), document: JSON.stringify(resultDocument(take, nextMode, session.current, song), null, 2) }).then(() => setHistoryVersion(value => value + 1), () => {});
+      // Kept in this browser the moment it ends, so a result that was not downloaded is never lost; the lyrics check,
+      // when there is one, replaces it once it is done.
+      const info = session.current, createdAt = new Date().toISOString();
+      const entry = (take: Summary) => ({ createdAt, songId: songKey, song: song.title, difficulty: take.difficulty, score: take.score, transpose: info.transpose, ...(phrase === undefined ? {} : { phrase }), document: JSON.stringify(resultDocument(take, nextMode, info, song), null, 2) });
+      const saved: Promise<string | null> = nextMode === 'microphone' && song.notes.length ? saveTake(entry(final)) : Promise.resolve(null);
+      saved.then(() => setHistoryVersion(value => value + 1), failure => setError(`No se pudo guardar este intento en el historial del navegador: ${(failure as Error).message} Descarga el resultado para conservarlo.`));
+      const mark = (take: Summary, shown = true) => {
         // A take that scored nothing, that the speakers leaked into or that practised one phrase sets no mark.
-        if (nextMode === 'microphone' && phrase === undefined && song.notes.length && take.score > 0 && !take.capture?.speakerBleed) {
-          const mark = bestScore(songKey, take.difficulty, !!take.lyrics);
-          if (shown) setPreviousBest(mark);
-          if (mark === null || take.score > mark) storeBest(songKey, take.difficulty, take.score, !!take.lyrics);
-        }
+        if (nextMode !== 'microphone' || phrase !== undefined || !song.notes.length || take.score <= 0 || take.capture?.speakerBleed) return;
+        const best = bestScore(songKey, take.difficulty, !!take.lyrics);
+        if (shown) setPreviousBest(best);
+        if (best === null || take.score > best) storeBest(songKey, take.difficulty, take.score, !!take.lyrics);
       };
-      if (!recordVoice) return settle(final);
+      if (!recordVoice) return mark(final);
       const job = new AbortController(); lyricsJob.current = job; setLyricsState({ status: 'analyzing' });
-      checkTakeLyrics(instance, final, phrase, job.signal).then(take => {
+      // A recognition that never answers must not hold the take: after five minutes it counts as failed.
+      const timeout = setTimeout(() => job.abort(new Error('El análisis tardó más de 5 minutos.')), 5 * 60000);
+      const stopped = new Promise<never>((_, reject) => job.signal.addEventListener('abort', () => reject(job.signal.reason instanceof Error ? job.signal.reason : new Error('Análisis cancelado.')), { once: true }));
+      Promise.race([checkTakeLyrics(instance, final, phrase, job.signal), stopped]).then(take => {
+        clearTimeout(timeout);
         const shown = lyricsJob.current === job;
         if (shown) { lyricsJob.current = null; setLyricsState({ status: 'idle' }); setResult(take); }
-        settle(take, shown);
+        if (take.lyrics) void saved.then(id => id ? updateTake(id, entry(take)) : undefined).then(() => setHistoryVersion(value => value + 1), () => {});
+        mark(take, shown);
       }, failure => {
+        clearTimeout(timeout);
         const shown = lyricsJob.current === job;
         if (shown) { lyricsJob.current = null; setLyricsState({ status: 'failed', error: (failure as Error).message }); }
-        settle(final, shown);
+        mark(final, shown);
       });
     }, message => {
       if (engine.current !== instance) return;

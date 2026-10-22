@@ -23,11 +23,12 @@ test('the lyrics check records the take, shows what was sung instead and takes i
       return destination.stream;
     };
   });
-  const posts: { headers: Record<string, string>; body: Buffer }[] = []; let failing = false;
+  const posts: { headers: Record<string, string>; body: Buffer }[] = []; let failing = false, hanging = false;
   await page.route('**/api/preparation/words', async route => {
     const request = route.request();
     if (request.method() === 'GET') return route.fulfill({ json: { available: true, device: 'cuda', token: 'test' } });
     posts.push({ headers: request.headers(), body: request.postDataBuffer()! });
+    if (hanging) return; // never answers
     if (failing) return route.fulfill({ status: 503, json: { error: 'El reconocedor no está disponible.' } });
     // The recording starts about a second before song time zero: words are timed from the start of the file.
     const at = (word: string, start: number, end: number) => ({ word, start: start + 1, end: end + 1, probability: .9 });
@@ -76,6 +77,11 @@ test('the lyrics check records the take, shows what was sung instead and takes i
   // Takes with the lyrics checked keep marks of their own, and the choice is remembered.
   const marks = await page.evaluate(() => [Object.keys(JSON.parse(localStorage.getItem('encore.best.v1') || '{}')), localStorage.getItem('encore.lyrics-check.v1')]);
   expect(marks[0].some((key: string) => key.endsWith('|relaxed+letra'))).toBe(true); expect(marks[1]).toBe('on');
+  // The kept take was replaced by the one with the lyrics.
+  const history = page.locator('.take-history');
+  await expect(history.locator('summary')).toHaveText(/Tus intentos guardados\s*1/);
+  await history.locator('summary').click();
+  await expect(history.locator('li b').first()).toHaveText(result.score.toLocaleString('es-EC'));
 
   // When the recogniser fails, the take keeps the points of its notes and says why.
   failing = true;
@@ -84,5 +90,12 @@ test('the lyrics check records the take, shows what was sung instead and takes i
   await expect(page.locator('.lyrics-review')).toHaveCount(0);
   const plain = await download();
   expect(plain.lyrics).toBeUndefined();
+  await expect(history.locator('summary')).toHaveText(/Tus intentos guardados\s*2/);
+
+  // A recognition that does not answer does not hold the take: it is kept as soon as the song ends.
+  hanging = true;
+  await page.getByRole('button', { name: 'Volver a cantar' }).click();
+  await expect(page.getByText(/Analizando la letra/)).toBeVisible({ timeout: 20000 });
+  await expect(history.locator('summary')).toHaveText(/Tus intentos guardados\s*3/);
   expect(errors).toEqual([]);
 });

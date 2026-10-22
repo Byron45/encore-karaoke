@@ -1,4 +1,6 @@
-# Punto de continuación · revisión 2L terminada
+# Punto de continuación · revisión 2M terminada
+
+22 de octubre de 2026: tres tomas nuevas (7.930, 7.772 y 6.607, sin la letra evaluada). Cada toma se guarda ahora en el historial en cuanto termina, y la letra la actualiza después; antes, con la letra activada, se guardaba al final del análisis. `scripts/mis-intentos.js` lista el historial desde la consola. Pendiente: que el usuario confirme con esa consulta qué quedó guardado, y que pruebe Evaluar la letra cantando una palabra mal a propósito. Detalle en `docs/NOTAS-TECNICAS.md`, sección 2M.
 
 ## Última revisión: gráfica NVIDIA y evaluación de la letra
 
