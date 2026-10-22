@@ -266,6 +266,44 @@ El usuario cantó varias canciones nuevas con la revisión 2J, notó que la punt
 
 Desde 2K cada toma con micrófono y mapa de notas se guarda al terminar (`src/take-history.ts`) en una base IndexedDB propia, `encore-takes-v1`, separada de la biblioteca para no migrarla. Se guarda el mismo documento que da «Descargar resultado» (puntuación, trazo y mapa cantado; nunca audio), unos 150–200 kB por toma, y se conservan las 60 más recientes. «Tus intentos guardados», en el escenario, las lista (canción, fecha, exigencia, tono, ensayo de frase y puntos) para descargarlas o borrarlas una a una o todas. Las tomas de demostración no se guardan.
 
+## Gráfica NVIDIA y evaluación de la letra · revisión 2L
+
+El usuario autorizó las descargas propuestas: acelerar el motor con su gráfica (NVIDIA GeForce RTX 5050 Laptop, 8 GB, controlador con CUDA 13.4) y reconocer la letra cantada.
+
+**Gráfica.** PyTorch 2.14.0 con CUDA 13.0 (`torch`, `torchvision` 0.29.0 y `torchaudio` 2.11.0, índice cu130 de PyTorch) y `onnxruntime-gpu` 1.30.0, que usa CUDA 13 y cuDNN 9: el proveedor CUDA de ONNX Runtime carga las mismas librerías de NVIDIA que trae PyTorch, sin descargarlas aparte. `audio-separator` usa la gráfica por sí solo cuando PyTorch la ve. En el análisis de la melodía, CREPE corre en la gráfica tramo a tramo mientras pYIN, que solo existe para el procesador, sigue en los cuatro procesos. Dos detalles hacen que el resultado sea el mismo que en el procesador:
+
+- torchcrepe decodifica cada lote de tramas por separado (Viterbi), así que el lote se mantiene en 128; con 1024 cambiaban los bordes y 5 de 491 notas.
+- Precisión float32 completa, sin TF32.
+
+| «Kilómetros», 193 s | Procesador | Gráfica |
+| --- | --- | --- |
+| Una pasada de separación | 90 s | 15–24 s |
+| Análisis de la melodía | 130 s | 23 s |
+| Preparación completa | 426 s (311 s con la revisión 2K) | 77 s |
+
+Pistas de la gráfica frente a las del procesador: diferencia de −65 dB (como mucho 45 de 32.768 en una muestra), inaudible; el mapa coincide en 490 de 491 notas, y con las mismas pistas el análisis da las mismas 491. `npm run audio:setup` instala esta versión si `nvidia-smi` encuentra una gráfica (`requirements-gpu-lock.txt`) y la de procesador si no, o con `--cpu`. Usa `uv pip sync` para que el entorno quede exactamente como el lock al cambiar de una a otra, y reinstala el ONNX Runtime en uso porque los dos paquetes instalan el mismo módulo.
+
+**Reconocer la letra.** `scripts/audio/words.py` transcribe con `openai-whisper` (turbo en la gráfica, small en el procesador; el modelo se descarga en `.local/audio/models/whisper` la primera vez) y devuelve cada palabra con su tiempo. No recibe la letra: con ella tendería a oírla aunque se cantara otra cosa. Sin condicionar cada fragmento al anterior y sin la opción de saltar silencios largos, que en una voz aislada se comió 37 s de un verso. `POST /api/preparation/words` (mismo origen y token que el resto; un reconocimiento a la vez) recibe un WAV y su SHA-256; con `X-Keep` guarda la respuesta para no repetir la voz aislada de una canción (`.local/audio/words`, hasta 200). `GET /api/preparation/words` dice si está disponible.
+
+`src/lyrics-check.ts` compara lo oído con la letra LRC: alineación en orden de palabras, cada palabra solo cerca de su línea (2 s antes del tiempo de la línea y 2 s después de la siguiente), parecido según cómo suena en español (b/v, s/z/c, h muda, ll/y, qu/k…), palabras juntas o separadas (*porque*/*por que*) y palabras de más casi sin coste. Las diferencias se agrupan: «dice "más que", se oyó "como"».
+
+Calibración con las voces originales aisladas, que cantan la letra correcta (todo lo que falta es error del reconocedor), y las letras de LRCLIB:
+
+| Canción | Palabras reconocidas | Reconocimiento |
+| --- | --- | --- |
+| Kilómetros | 100 % de 234 | 17 s |
+| Un Millón de Primaveras | 100 % de 182 | 16 s |
+| Luz de Día | 98 % de 221 | 18 s |
+| Qué distintos tú y yo | 80 % de 272 | 21 s |
+
+En «Qué distintos» lo que falla es el final, con líneas que se repiten cada 2–4 s sobre coros. Con la letra de «Kilómetros» alterada en 10 palabras, las 10 aparecieron como diferencias, con lo que la voz cantaba en su lugar.
+
+En la app, **Evaluar la letra** (desactivado por defecto, se recuerda) graba la voz de la toma con un worklet aparte (`recorder-processor.js`), la pasa a 16 kHz con un `OfflineAudioContext` y, al terminar, la envía al servidor. Las palabras se pasan a tiempo de la canción, se descartan las que caen donde el micrófono no oyó voz (lo que el reconocedor inventa sobre el silencio) y se corrigen por el retraso de captura como las notas. Si la canción tiene la voz aislada, se reconoce también una vez (en segundo plano al empezar) y las palabras que el reconocedor no distingue en la grabación no cuentan para el cantante. La puntuación queda en `puntos de la melodía × (1 − 0,2 × (1 − letra))`; la toma guarda su marca en una clave aparte (`dificultad+letra`) y el resultado descargado incluye `lyrics` (palabras evaluadas, acertadas, ignoradas, diferencias por línea, dispositivo y modelo). Si el reconocimiento falla, la toma conserva los puntos de la melodía y lo dice. El ensayo de una frase evalúa solo sus líneas.
+
+Comprobado de punta a punta con el servidor real: la voz original de los primeros 45 s de «Kilómetros» entra por el micrófono simulado, en tiempo con la canción. Resultado: letra 99 % (81 de 82; la única diferencia, *del*/*el*, es del reconocedor), 15 s de análisis, 9.789 → 9.765 puntos. Pruebas: comparador (`tests/lyrics-check.test.mjs`), permisos y caché del servicio, y el flujo completo en el navegador con el servidor simulado (`tests/browser/lyrics-check.spec.ts`).
+
+No comprobado: la evaluación con la voz del usuario cantando de verdad, ni cuánto se equivoca el reconocedor con su voz y su micrófono. Esa prueba decide si el 20 % es el peso adecuado.
+
 ## Letras completas y canto libre
 
 La revisión **2E** mejora la explicación de resultados: distingue cobertura parcial de afinación y muestra diagnóstico por frase. La descarga JSON (versión 4 desde la revisión 2F) incluye tiempos, señal, tono y errores por frase junto con el texto de retroalimentación, datos básicos de la referencia, la exigencia y lo medido en la captura (`capture`: retraso aplicado, ruido de fondo, altavoces y propuesta). El promedio firmado puede compensar desviaciones graves/agudas; no sustituye al error absoluto. Detalles y análisis de una prueba real en `docs/EVALUACION-02E.md`.

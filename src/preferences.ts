@@ -1,7 +1,7 @@
 import { DIFFICULTIES, SCORING_VERSION } from './scoring';
 import type { Difficulty } from './scoring';
 
-const difficultyKey = 'encore.difficulty.v1', offsetKey = 'encore.offset.v1', bestKey = 'encore.best.v1';
+const difficultyKey = 'encore.difficulty.v1', offsetKey = 'encore.offset.v1', bestKey = 'encore.best.v1', lyricsKey = 'encore.lyrics-check.v1';
 
 // Singing for fun starts on the forgiving level; the tighter ones are a choice.
 export const DEFAULT_DIFFICULTY: Difficulty = 'relaxed';
@@ -33,11 +33,20 @@ export function storeOffset(deviceId: string, value: number | null) {
 function bests(): Record<string, unknown> {
   try { const value = JSON.parse(localStorage.getItem(bestKey) || '{}'); return value && typeof value === 'object' ? value : {}; } catch { return {}; }
 }
-const markOf = (song: string, difficulty: Difficulty) => `${SCORING_VERSION}|${song}|${difficulty}`;
-export function bestScore(song: string, difficulty: Difficulty): number | null {
-  const value = bests()[markOf(song, difficulty)];
+// Takes whose lyrics were checked keep marks of their own: they are scored on more than the notes.
+const markOf = (song: string, difficulty: Difficulty, lyrics = false) => `${SCORING_VERSION}|${song}|${difficulty}${lyrics ? '+letra' : ''}`;
+export function bestScore(song: string, difficulty: Difficulty, lyrics = false): number | null {
+  const value = bests()[markOf(song, difficulty, lyrics)];
   return typeof value === 'number' && value >= 0 && value <= 10000 ? value : null;
 }
-export function storeBest(song: string, difficulty: Difficulty, score: number) {
-  try { localStorage.setItem(bestKey, JSON.stringify({ ...bests(), [markOf(song, difficulty)]: score })); } catch { /* The mark is only shown for this take. */ }
+export function storeBest(song: string, difficulty: Difficulty, score: number, lyrics = false) {
+  try { localStorage.setItem(bestKey, JSON.stringify({ ...bests(), [markOf(song, difficulty, lyrics)]: score })); } catch { /* The mark is only shown for this take. */ }
+}
+
+// Whether takes are recorded to check the lyrics; off until the singer turns it on.
+export function savedLyricsCheck() {
+  try { return localStorage.getItem(lyricsKey) === 'on'; } catch { return false; }
+}
+export function storeLyricsCheck(on: boolean) {
+  try { localStorage.setItem(lyricsKey, on ? 'on' : 'off'); } catch { /* The choice still applies to this visit. */ }
 }

@@ -6,7 +6,7 @@ import { mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { detectPitch } from '../public/audio/dsp.js';
-import { findFfmpeg, preparationPlugin, pruneTransposed, supportsRubberband, transposeArgs } from '../server/preparation.mjs';
+import { findFfmpeg, preparationPlugin, pruneTransposed, pruneWords, supportsRubberband, transposeArgs } from '../server/preparation.mjs';
 
 const RATE = 44100;
 /** Stereo PCM16 WAV with a voice-like 220 Hz tone in two bursts, so pitch and position can both be checked. */
@@ -94,4 +94,34 @@ test('the local server moves a song by semitones, exactly and only from this app
     server.close();
     for (const name of created) await rm(path.join(process.cwd(), '.local/audio/transposed', name), { force: true });
   }
+});
+
+test('sung words are recognised only for this app, with a matching file, a valid language and a bounded size', async () => {
+  let middleware;
+  preparationPlugin().configureServer({ middlewares: { use: fn => { middleware = fn; } } });
+  const server = createServer((req, res) => middleware(req, res, () => { res.statusCode = 404; res.end(); }));
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}/api/preparation/words`, audio = burstsWav(1), sha = createHash('sha256').update(audio).digest('hex');
+  try {
+    const status = await (await fetch(base)).json();
+    assert.equal(typeof status.available, 'boolean'); assert.match(status.token, /^[a-f0-9]{64}$/);
+    assert.equal((await fetch(base, { headers: { Origin: 'https://untrusted.example' } })).status, 403);
+    const send = headers => fetch(base, { method: 'POST', headers: { 'X-Encore-Token': status.token, 'X-Audio-Sha256': sha, ...headers }, body: audio });
+    assert.equal((await send({ 'X-Encore-Token': 'otro' })).status, 403);
+    if (!status.available) return;
+    for (const [header, value] of [['X-Audio-Sha256', 'zz'], ['X-Language', 'español'], ['X-Language', 'ES']]) assert.equal((await send({ [header]: value })).status, 400, `${header}: ${value}`);
+    assert.equal((await send({ 'X-Audio-Sha256': 'a'.repeat(64) })).status, 400);
+  } finally { server.close(); }
+});
+
+test('recognitions of isolated voices are kept up to a count, newest first; abandoned takes are removed', async () => {
+  const folder = await mkdtemp(path.join(tmpdir(), 'encore-words-'));
+  try {
+    const name = (i, language = 'es') => `${String(i).repeat(64).slice(0, 64)}_${language}.json`;
+    for (const [file, hours] of [[name(1), 5], [name(2), 3], [name(3, 'auto'), 1], ['old.wav', 2], ['new.wav', 0], ['notes.txt', 9]]) {
+      await writeFile(path.join(folder, file), 'x'); const when = new Date(Date.now() - hours * 3600000); await utimes(path.join(folder, file), when, when);
+    }
+    assert.equal(await pruneWords(2, folder), 2);
+    assert.deepEqual((await readdir(folder)).sort(), [name(2), name(3, 'auto'), 'new.wav', 'notes.txt'].sort());
+  } finally { await rm(folder, { recursive: true, force: true }); }
 });

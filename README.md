@@ -17,6 +17,7 @@ Karaoke para practicar con tu propia música. Encore escucha tu voz por el micr�
 - **Tres acompañamientos** tras separar: voz original, voz al 25 % o solo instrumental.
 - **Cambio de tono.** Sube o baja tu canción hasta cinco semitonos sin cambiar el ritmo; las notas que se evalúan se mueven con ella.
 - **Puntuación respecto a la voz original.** En una canción preparada, 10.000 puntos son lo que obtiene la voz de la propia grabación medida con este mismo sistema.
+- **Evaluación de la letra (experimental).** Si la activas, tu computadora reconoce lo que cantas con Whisper y lo compara con la letra sincronizada, línea por línea: «dice "más que", se oyó "como"». Resta hasta un 20 % de los puntos.
 - **Ajustes que se adaptan a tu equipo.** Compensa el retraso de audio, ajusta la sensibilidad al nivel de tu micrófono y avisa si la música está entrando por él.
 - **Resultados explicados** por frase, con descarga en JSON, y **tu mejor marca** por canción y nivel de exigencia.
 - **Tus intentos guardados.** Cada canción que cantas con micrófono queda en el navegador (los últimos 60) para descargar su resultado más tarde, aunque no lo hayas descargado al terminar.
@@ -67,6 +68,7 @@ En el panel **Prepara tu voz**:
 
 - **Exigencia de afinación** decide cuánto margen tienes (tabla siguiente). Empieza en Relajada.
 - **Tono de la canción** sube o baja la música y las notas, de semitono en semitono. Si al terminar el resultado dice que cantaste por debajo de la nota, prueba a bajarla uno o dos. Necesita la preparación automática instalada; la primera vez con cada canción y tono tarda unos 5 segundos por minuto de canción.
+- **Evaluar la letra** graba tu voz durante la canción y, al terminar, la reconoce en esta computadora (unos 15 segundos con una gráfica NVIDIA, un minuto o más sin ella). Necesita la letra con tiempos (LRC) y el motor local.
 - **Compensar retraso** empieza en automático. Al terminar una canción, si tu voz encaja mejor con otro valor, aparece un botón para usarlo; se recuerda para ese micrófono.
 
 ## Cómo se puntúa
@@ -105,6 +107,8 @@ Con un semitono de margen, una nota fija bien elegida se acerca a una melodía c
 
 **Repaso.** Al terminar, cada frase tiene un botón **Ver trazo** que dibuja tu voz sobre las notas con las que se comparó: verde en la nota, ámbar cerca, rojo fuera. Sirve para distinguir si desafinaste o si el mapa no representa lo que cantaste. **Ensayar** repite esa frase sola, con la cuenta atrás y dos segundos de canción antes; los ensayos no cuentan como marca.
 
+**La letra (experimental).** Con **Evaluar la letra** activado, cada palabra de la letra cuenta si se reconoció igual o parecida en tu voz, cerca de su línea; se perdonan diferencias de escritura que suenan igual (b/v, s/z/c, h muda, *porque*/*por que*) y las palabras de más (ad libs). Las palabras que el reconocedor tampoco distingue en la voz original de la grabación no cuentan. La puntuación de la melodía se multiplica por un factor entre 0,8 (ninguna palabra) y 1 (todas). Las tomas con la letra evaluada guardan su propia mejor marca. Medido con las voces originales de cuatro canciones, el reconocedor acierta entre el 80 % y el 100 % de las palabras bien cantadas, y detectó 10 de 10 palabras cambiadas a propósito.
+
 ## Preparación automática
 
 Es opcional y se instala aparte, porque descarga dependencias pesadas de Python:
@@ -115,7 +119,7 @@ npm run audio:setup
 
 Crea un entorno aislado en `.venv-audio` con Python 3.11 y dependencias fijadas. Todo el procesamiento se hace por CPU en tu equipo.
 
-Con un procesador de 16 núcleos, preparar una canción de 3 minutos tarda unos 5: unos 3 de separación y 2 del mapa de notas, que se reparte en cuatro procesos.
+Con una gráfica NVIDIA, `npm run audio:setup` instala PyTorch y ONNX Runtime con CUDA (unos 3 GB) y preparar una canción de 3 minutos tarda alrededor de un minuto y cuarto. Solo con el procesador (16 núcleos) tarda unos 5: unos 3 de separación y 2 del mapa de notas, que se reparte en cuatro procesos. Los dos dan las mismas pistas y el mismo mapa; `npm run audio:setup -- --cpu` instala la versión de procesador aunque haya gráfica.
 
 La separación hace dos pasadas, cada una con el modelo entrenado para lo que se queda: UVR-MDX-NET-Inst_HQ_3 para el instrumental y Kim_Vocal_2 para la voz. La voz aislada es la base del mapa de notas y de la escala, y con el modelo de voz sale mucho más limpia: en una de las canciones de prueba, el bajo que se colaba en ella pasó del 45 % de las lecturas con tono al 1 %. El primer uso descarga los dos modelos (unos 134 MB). El mismo motor instala FFmpeg, que cambia el tono de las canciones con Rubber Band. En Windows la versión que instala ya lo incluye; en otros sistemas la app comprueba si lo tiene y, si no, deja desactivado el cambio de tono.
 
@@ -125,7 +129,7 @@ El mapa generado es **experimental**: puede cubrir solo parte de la canción, eq
 
 ## Privacidad
 
-- La voz se analiza en el navegador con un AudioWorklet. No se graba ni se sube.
+- La voz se analiza en el navegador con un AudioWorklet. No se graba ni se sube, salvo que actives **Evaluar la letra**: entonces la voz de cada toma se guarda en memoria, se envía al servidor de esta misma computadora para reconocerla y se descarta. Solo queda lo reconocido (las palabras y sus tiempos) en el resultado.
 - El resultado de cada intento incluye el trazo de afinación (la nota detectada y el nivel en cada instante), no el sonido. Se guarda en el navegador junto con los 59 intentos anteriores, en «Tus intentos guardados» del escenario, donde puedes descargarlos o borrarlos.
 - La biblioteca y tus intentos viven en IndexedDB, en tu navegador, y tus ajustes y mejores marcas en su almacenamiento local. No hay cuentas ni copia en la nube: borrar los datos del sitio lo borra todo.
 - El servidor local escucha solo en `127.0.0.1`. La preparación de audio comprueba además el origen de cada petición y un token de sesión.
@@ -133,13 +137,14 @@ El mapa generado es **experimental**: puede cubrir solo parte de la canción, eq
   - Google Fonts, al cargar la página (hay tipografías locales de respaldo).
   - MusicBrainz y LRCLIB, al pulsar buscar; se envían solo título y artista.
   - La descarga de los dos modelos, la primera vez que separas una canción.
+  - La descarga del modelo de reconocimiento de voz (Whisper turbo, unos 1,5 GB; con el procesador, Whisper small, unos 460 MB), la primera vez que evalúas la letra.
 
 ## Pruebas
 
 ```bash
-npm test             # 64 pruebas unitarias: detector, puntuación, mapas, letras, cambio de tono, servicios
+npm test             # 74 pruebas unitarias: detector, puntuación, mapas, letras, comparación de la letra, cambio de tono, servicios
 npm run build        # comprobación de tipos y compilación
-npm run test:browser # 43 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
+npm run test:browser # 44 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
 ```
 
 Las pruebas de navegador hacen pasar una voz sintética por el micrófono, el detector y la puntuación reales. No sustituyen una prueba con voz humana.
@@ -183,6 +188,7 @@ docs/           Notas técnicas, plan por etapas y evaluaciones
 - **El retraso automático es una estimación.** Parte de lo que informa el equipo, que puede no coincidir con el real; por eso existe la propuesta al terminar cada canción.
 - **El mapa automático es experimental** y suele quedar fragmentado en notas muy cortas.
 - **El cambio de tono necesita el servidor local** con el motor de audio instalado y llega a cinco semitonos; más allá la voz y los instrumentos suenan artificiales. Rubber Band puede adelantar o retrasar el sonido unos 20 ms, dentro del margen de tiempo de Relajada y Normal.
+- **La evaluación de la letra es experimental.** El reconocimiento de voz se equivoca más con el canto que con el habla: una palabra bien cantada puede oírse distinta, sobre todo con vocales largas, coros superpuestos o mucha música en los auriculares. Por eso pesa como mucho un 20 % y muestra qué oyó en cada línea. Solo funciona con letra sincronizada (LRC) y en el servidor local.
 - **Los servicios locales dependen de Vite** (`npm run dev` o `npm run preview`). Copiar solo `dist/` a un alojamiento estático no incluye las búsquedas ni la preparación.
 - **El historial guarda los últimos 60 intentos** con micrófono, sin gráficas de progreso. No hay pausa ni cola de canciones.
 
@@ -208,7 +214,7 @@ El plan original por etapas está en [docs/ETAPAS.md](docs/ETAPAS.md).
 
 React 19, TypeScript y Vite. Web Audio API para la captura y el análisis. Playwright para las pruebas de navegador.
 
-El motor opcional usa [python-audio-separator](https://github.com/nomadkaraoke/python-audio-separator) con dos modelos UVR-MDX-NET (Inst_HQ_3 y Kim_Vocal_2), [FFmpeg](https://ffmpeg.org) con [Rubber Band](https://breakfastquay.com/rubberband/) para el cambio de tono, [torchcrepe](https://github.com/maxrmorrison/torchcrepe) y [librosa](https://librosa.org). Los iconos son de [Lucide](https://lucide.dev). Los metadatos proceden de MusicBrainz y las letras de LRCLIB; cada servicio tiene sus propias condiciones de uso.
+El motor opcional usa [python-audio-separator](https://github.com/nomadkaraoke/python-audio-separator) con dos modelos UVR-MDX-NET (Inst_HQ_3 y Kim_Vocal_2), [FFmpeg](https://ffmpeg.org) con [Rubber Band](https://breakfastquay.com/rubberband/) para el cambio de tono, [Whisper](https://github.com/openai/whisper) para reconocer la letra cantada, [torchcrepe](https://github.com/maxrmorrison/torchcrepe) y [librosa](https://librosa.org). Los iconos son de [Lucide](https://lucide.dev). Los metadatos proceden de MusicBrainz y las letras de LRCLIB; cada servicio tiene sus propias condiciones de uso.
 
 Encore no incluye ni descarga canciones. Usa solo audio y letras que tengas derecho a utilizar.
 

@@ -14,12 +14,14 @@ export class MicrophoneInput {
   private context: AudioContext;
   private stream: MediaStream | null = null;
   private processor: AudioWorkletNode | null = null;
+  private recorder: AudioWorkletNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   private mute: GainNode | null = null;
   private disposed = false;
   constructor(context: AudioContext) { this.context = context; }
 
-  async open(deviceId: string, onReading: (data: InputReading) => void, onDevice: (device: ActiveMicrophone) => void, onError: (message: string) => void): Promise<boolean> {
+  /** onAudio, when given, also receives the raw samples in blocks with the context time of their first sample. */
+  async open(deviceId: string, onReading: (data: InputReading) => void, onDevice: (device: ActiveMicrophone) => void, onError: (message: string) => void, onAudio?: (samples: Float32Array, time: number) => void): Promise<boolean> {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('Este navegador no permite usar el micrófono aquí. Abre la app en localhost o HTTPS.');
     const stream = await navigator.mediaDevices.getUserMedia({ audio: {
       ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
@@ -40,6 +42,13 @@ export class MicrophoneInput {
     this.source.connect(this.processor).connect(this.mute).connect(this.context.destination);
     this.processor.onprocessorerror = () => { if (!this.disposed) onError('El análisis de audio se interrumpió. Prueba de nuevo el micrófono.'); };
     this.processor.port.onmessage = ({ data }: MessageEvent<InputReading>) => { if (!this.disposed) onReading(data); };
+    if (onAudio) {
+      await this.context.audioWorklet.addModule('/audio/recorder-processor.js');
+      if (this.disposed) return false;
+      this.recorder = new AudioWorkletNode(this.context, 'encore-recorder');
+      this.source.connect(this.recorder).connect(this.mute);
+      this.recorder.port.onmessage = ({ data }: MessageEvent<{ time: number; samples: Float32Array }>) => { if (!this.disposed) onAudio(data.samples, data.time); };
+    }
     const latency = (track.getSettings() as MediaTrackSettings & { latency?: number }).latency;
     onDevice({ deviceId: actualId || deviceId, label: track.label || 'Entrada predeterminada del sistema', ...(Number.isFinite(latency) ? { latency } : {}) });
     return true;
@@ -48,6 +57,7 @@ export class MicrophoneInput {
   stop() {
     this.disposed = true;
     if (this.processor) { this.processor.port.onmessage = null; this.processor.onprocessorerror = null; this.processor.disconnect(); }
+    if (this.recorder) { this.recorder.port.onmessage = null; this.recorder.disconnect(); }
     this.source?.disconnect(); this.mute?.disconnect();
     this.stream?.getTracks().forEach(track => track.stop()); this.stream = null;
   }

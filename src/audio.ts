@@ -8,6 +8,7 @@ import type { Accompaniment } from './preparation';
 import { verifyStem } from './preparation';
 import { LEVEL_GATE, referenceMidiAt } from './pitch-reference';
 import { hearsCountIn, levelGate, LevelStats, noiseFloor, reportedLatency } from './capture';
+import { wav, WORDS_RATE } from './sung-words';
 
 export type Mode = 'demo' | 'microphone';
 // Seconds of the song heard before a phrase that is practised on its own.
@@ -49,11 +50,16 @@ export class KaraokeEngine {
   // The stretch of the song this take plays, in song seconds: all of it, or one phrase with a little before and after.
   private from = 0;
   private end: number;
-  constructor(options: { deviceId?: string; transpose?: number; song?: PlayableSong; accompaniment?: Accompaniment; difficulty?: Difficulty; audio?: Blob; ceiling?: number; phrase?: number } = {}) {
+  // The singer's voice as captured, only when the lyrics are checked: blocks with the context time of their first sample.
+  private recordVoice: boolean;
+  private voice: { time: number; samples: Float32Array }[] = [];
+  private sampleRate = 48000;
+  constructor(options: { deviceId?: string; transpose?: number; song?: PlayableSong; accompaniment?: Accompaniment; difficulty?: Difficulty; audio?: Blob; ceiling?: number; phrase?: number; recordVoice?: boolean } = {}) {
     this.track = options.song || song;
     this.accompaniment = options.accompaniment || 'original';
     if (this.accompaniment !== 'original' && !this.track.prepared) throw new Error('Prepara las pistas en la biblioteca antes de elegir este acompañamiento.');
     this.override = options.audio || null;
+    this.recordVoice = !!options.recordVoice;
     if (this.track.audio && options.transpose && !this.override) throw new Error('Cambia el tono de la pista antes de cantarla en otro tono.');
     const notes = options.phrase === undefined ? this.track.notes : this.track.notes.filter(note => note.phrase === options.phrase);
     if (!notes.length && options.phrase !== undefined) throw new Error('Esa frase no tiene notas que ensayar.');
@@ -95,6 +101,7 @@ export class KaraokeEngine {
     this.automaticOffset = offsetMs === null; this.offsetMs = offsetMs ?? 0;
     try {
       this.context = new AudioContext({ latencyHint: 'interactive' });
+      this.sampleRate = this.context.sampleRate;
       await this.context.resume();
       if (this.disposed) return;
       let decoded: AudioBuffer | null = null;
@@ -116,7 +123,7 @@ export class KaraokeEngine {
           if (time > this.from - 1) this.readings.push({ time, span: data.span, frequency: data.frequency, confidence: data.confidence, rms: data.rms });
           if (time >= this.from) { this.levels.add(data.rms); if (this.levels.count % 47 === 0) this.tracker.gate = this.gate(470); }
           this.tracker.sample(time - this.offsetMs / 1000, data.span, data.frequency, data.confidence, data.rms);
-        }, device => { this.inputLatency = device.latency || 0; onDevice(device); }, message => { this.stop(); onError(message); });
+        }, device => { this.inputLatency = device.latency || 0; onDevice(device); }, message => { this.stop(); onError(message); }, this.recordVoice ? (samples, time) => { if (!this.disposed) this.voice.push({ time, samples }); } : undefined);
         if (!ready || this.disposed) return;
       }
       // Song time zero; the stretch this take plays starts after a three-second count-in.
@@ -198,6 +205,25 @@ export class KaraokeEngine {
       chord.forEach(midi => this.tone(frequencyOf(midi), this.origin + bar * 4, 3.8, 0.024));
     }
     if (guide) this.chart.forEach(note => this.tone(frequencyOf(note.midi), this.origin + note.start, note.duration, 0.065, 'triangle', note.pitchCurve));
+  }
+
+  /**
+   * The singer's voice over the stretch the take played, as a 16 kHz mono WAV for speech recognition, with the song time
+   * of its first sample. Null when the voice was not recorded. Frees the recording.
+   */
+  async voiceRecording(): Promise<{ audio: Blob; start: number } | null> {
+    const rate = this.sampleRate, first = this.origin + this.from - 1, last = this.origin + this.end + 1 + this.offsetMs / 1000;
+    const chunks = this.voice.filter(chunk => chunk.time + chunk.samples.length / rate > first && chunk.time < last);
+    this.voice = [];
+    if (!chunks.length || !Number.isFinite(this.origin)) return null;
+    const start = chunks[0].time, total = Math.round((chunks.at(-1)!.time - start) * rate) + chunks.at(-1)!.samples.length;
+    const samples = new Float32Array(total);
+    for (const chunk of chunks) samples.set(chunk.samples, Math.max(0, Math.min(total - chunk.samples.length, Math.round((chunk.time - start) * rate))));
+    // The browser's own resampler, rendered offline, brings the capture rate down to the recogniser's.
+    const offline = new OfflineAudioContext(1, Math.max(1, Math.ceil(total * WORDS_RATE / rate)), WORDS_RATE);
+    const buffer = offline.createBuffer(1, total, rate); buffer.copyToChannel(samples, 0);
+    const source = offline.createBufferSource(); source.buffer = buffer; source.connect(offline.destination); source.start();
+    return { audio: wav((await offline.startRendering()).getChannelData(0), WORDS_RATE), start: start - this.origin };
   }
 
   stop() {

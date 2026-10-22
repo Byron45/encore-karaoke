@@ -1,6 +1,17 @@
-# Punto de continuación · revisión 2K terminada
+# Punto de continuación · revisión 2L terminada
 
-## Última revisión: tomas del 19 de octubre, piso de la escala e historial
+## Última revisión: gráfica NVIDIA y evaluación de la letra
+
+21 de octubre de 2026. El usuario autorizó las descargas (unos 3 GB de PyTorch y ONNX Runtime con CUDA, y Whisper con su modelo turbo de 1,5 GB) y pidió hacer los cambios necesarios. Revisión 2L:
+
+- El motor usa su RTX 5050: preparar «Kilómetros» baja de 426 s (311 s con 2K) a 77 s, con las mismas pistas (−65 dB de diferencia) y el mismo mapa. `npm run audio:setup` elige `requirements-gpu-lock.txt` si hay gráfica NVIDIA.
+- **Evaluar la letra** (experimental, desactivado por defecto): graba la voz de la toma, Whisper la reconoce en la gráfica (unos 15 s) y `src/lyrics-check.ts` la compara línea a línea con la letra LRC. Resta hasta un 20 %. Las palabras que el reconocedor no distingue en la voz original no cuentan. Marcas aparte con `+letra`.
+
+Calibración: con las voces originales el reconocedor acierta 100 %, 100 %, 98 % y 80 % de las palabras; detectó 10 de 10 palabras cambiadas. Detalle en `docs/NOTAS-TECNICAS.md`, sección 2L. Las letras LRC de las cuatro canciones están en `artifacts/audio-*/lyrics.lrc` (fuera del repositorio).
+
+Pendiente: que el usuario pruebe Evaluar la letra con su voz y diga si las diferencias que muestra son reales; con eso, decidir si el peso del 20 % es adecuado.
+
+## Revisión 2K: tomas del 19 de octubre, piso de la escala e historial
 
 19 de octubre de 2026. El usuario cantó varias canciones con 2J (dice que la puntuación subió) y solo descargó dos resultados: «Kilómetros» (Los Caligaris, 4.165, voz original) y «Qué distintos tú y yo» (7.026, voz al 25 %). Pistas regeneradas en `artifacts/audio-kilometros` y `artifacts/audio-que-distintos`. Diagnóstico: en «Qué distintos» la toma es buena hasta 3:18 (85 % por frase) y después sigue una línea 3–4 semitonos más aguda que la voz principal; en «Kilómetros» canta por debajo y encajaría mejor un semitono abajo.
 

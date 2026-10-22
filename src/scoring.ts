@@ -1,5 +1,6 @@
 import { midiOf } from './song.ts';
 import type { Note } from './song.ts';
+import type { LyricsSummary } from './sung-words.ts';
 import { evaluationWindow, LEVEL_GATE, pitchError, referenceMidiAt, reliablePitch } from './pitch-reference.ts';
 
 export const SCORING_VERSION = 'encore-intonation-5';
@@ -45,7 +46,7 @@ export function encodeTrace(readings: Reading[]) {
     level: readings.map(reading => Math.round(reading.rms * 10000)).join(','),
   };
 }
-export type Summary = ReturnType<ScoreTracker['summary']> & { capture?: CaptureReport };
+export type Summary = ReturnType<ScoreTracker['summary']> & { capture?: CaptureReport; lyrics?: LyricsSummary };
 
 export class ScoreTracker {
   chart: Note[];
@@ -224,7 +225,7 @@ export function performanceFeedback(summary: Summary, transpose = 0, canTranspos
     : { title: 'El tono detectado tuvo poca coincidencia con la referencia.', detail: `La afinación durante el tono evaluable fue del ${summary.intonation}%. Compara tu tono con el afinador y revisa la sincronización.${experimentalMap ? ' Revisa la voz aislada y el mapa automático antes de concluir que la diferencia procede de tu canto.' : ''}` };
   // A single held note can reach about 5,000 on a melody that moves little: a good try starts above that.
   const title = summary.score >= 8500 ? '¡Gran interpretación!' : summary.score >= 7000 ? 'Muy bien cantada.' : summary.score >= 5500 ? 'Buen intento.' : 'Cada intento cuenta.';
-  return { title, detail: `Esta evaluación combina afinación y tiempo cantado. Las palabras aún no se califican.${advice}` };
+  return { title, detail: `${summary.lyrics ? 'Esta evaluación combina afinación, tiempo cantado y, de forma experimental, la letra.' : 'Esta evaluación combina afinación y tiempo cantado. Las palabras no se califican salvo que actives Evaluar la letra.'}${advice}` };
 }
 
 export function phraseFeedback(phrase: Summary['phraseDiagnostics'][number]) {

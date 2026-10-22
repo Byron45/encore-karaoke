@@ -29,15 +29,32 @@ WORKERS, THREADS = 4, 4
 def _threads(count):
     torch.set_num_threads(count)
 
-def _chunk(window, first, count):
-    """CREPE, pYIN and level of one chunk with its context, trimmed to the chunk itself."""
+def _neural(window, first, count, device='cpu', batch=128):
+    """CREPE pitch and periodicity of one chunk with its context, trimmed to the chunk itself."""
     with torch.inference_mode():
-        pitch, periodicity = torchcrepe.predict(torch.from_numpy(window.copy())[None], 16000, HOP, 65.4, 987.8, 'full', decoder=precise_viterbi, return_periodicity=True, batch_size=128, device='cpu')
+        pitch, periodicity = torchcrepe.predict(torch.from_numpy(window.copy())[None], 16000, HOP, 65.4, 987.8, 'full', decoder=precise_viterbi, return_periodicity=True, batch_size=batch, device=device)
+    return [value[0].cpu().numpy()[first:first + count] for value in [pitch, periodicity]]
+
+def _levels(window, first, count):
+    """pYIN pitch, its voicing probability and the level of one chunk, trimmed to the chunk itself."""
     pyin, _, probability = librosa.pyin(window, sr=16000, fmin=65.4, fmax=987.8, frame_length=1024, hop_length=HOP, fill_na=np.nan)
     energy = librosa.feature.rms(y=window, frame_length=1024, hop_length=HOP)[0]
-    return [value[first:first + count] for value in [pitch[0].numpy(), periodicity[0].numpy(), pyin, probability, energy]]
+    return [value[first:first + count] for value in [pyin, probability, energy]]
 
-def frames(path, callback=None, workers=WORKERS):
+def _chunk(window, first, count):
+    return _neural(window, first, count) + _levels(window, first, count)
+
+def device():
+    """CUDA when PyTorch was installed with it and an NVIDIA GPU is present (npm run audio:setup decides), else the CPU."""
+    if not torch.cuda.is_available(): return 'cpu'
+    # Full float32 precision instead of TF32, PyTorch's default for convolutions on recent GPUs. With it, and the same
+    # batch of 128 frames (torchcrepe decodes each batch on its own), the GPU gives the CPU's map note for note.
+    torch.backends.cudnn.allow_tf32 = False
+    torch.backends.cuda.matmul.allow_tf32 = False
+    return 'cuda'
+
+def frames(path, callback=None, workers=WORKERS, where=None):
+    where = where or device()
     torch.set_num_threads(THREADS)
     samples, rate = sf.read(path, dtype='float32', always_2d=True)
     mono = librosa.resample(samples.mean(axis=1), orig_sr=rate, target_sr=16000)
@@ -48,7 +65,16 @@ def frames(path, callback=None, workers=WORKERS):
         left, right = max(0, begin - 16000), min(len(mono), end + 16000)
         jobs.append((mono[left:right], (begin - left) // HOP, int(np.ceil((end - begin) / HOP))))
     parts = [None] * len(jobs)
-    if workers > 1 and len(jobs) > 1:
+    if where != 'cpu':
+        # CREPE runs on the GPU chunk by chunk while pYIN, which only has a CPU version, runs in the worker processes.
+        with ProcessPoolExecutor(max_workers=min(workers, len(jobs)), initializer=_threads, initargs=(THREADS,)) as pool:
+            levels = [pool.submit(_levels, *job) for job in jobs]
+            for index, job in enumerate(jobs):
+                parts[index] = _neural(*job, where)
+                if callback: callback((index + 1) / len(jobs) * .9)
+            parts = [neural + level.result() for neural, level in zip(parts, levels)]
+        if callback: callback(1)
+    elif workers > 1 and len(jobs) > 1:
         with ProcessPoolExecutor(max_workers=min(workers, len(jobs)), initializer=_threads, initargs=(THREADS,)) as pool:
             pending = {pool.submit(_chunk, *job): index for index, job in enumerate(jobs)}
             for done, future in enumerate(as_completed(pending), 1):

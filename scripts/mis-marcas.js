@@ -13,6 +13,7 @@
   const levels = { relaxed: 'Relajada', normal: 'Normal', strict: 'Estricta' };
   console.table(Object.entries(marks).map(([key, points]) => {
     const [version, song, level] = key.split('|');
-    return { 'canción': song === 'ejercicio' ? 'Ejercicio incluido' : titles[song] || song, exigencia: levels[level] || level, puntos: points, escala: version };
+    const [base, lyrics] = level.split('+');
+    return { 'canción': song === 'ejercicio' ? 'Ejercicio incluido' : titles[song] || song, exigencia: (levels[base] || base) + (lyrics ? ' con letra' : ''), puntos: points, escala: version };
   }).sort((a, b) => b.escala.localeCompare(a.escala) || a['canción'].localeCompare(b['canción'])));
 })();

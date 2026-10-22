@@ -12,6 +12,8 @@ const jobRoot = path.join(root, '.local/audio/jobs');
 const artifactNames = new Set(['manifest.json', 'analysis.json', 'vocals.wav', 'instrumental.wav', 'reduced.wav']);
 const MAX_BYTES = 30 * 1024 * 1024;
 const transposedRoot = path.join(root, '.local/audio/transposed');
+const wordsScript = path.join(root, 'scripts/audio/words.py'), wordsRoot = path.join(root, '.local/audio/words');
+const WORDS_BYTES = 128 * 1024 * 1024, WORDS_KEPT = 200;
 const TRANSPOSE_BYTES = 128 * 1024 * 1024, TRANSPOSE_CACHE_BYTES = 2 * 1024 ** 3, RATE = 44100;
 
 /** The FFmpeg the audio engine installed: the copy prepare.py keeps beside the models, or the one inside the Python environment. */
@@ -59,6 +61,18 @@ export async function pruneTransposed(limit = TRANSPOSE_CACHE_BYTES, directory =
     await rm(entry.file, { force: true }).then(() => { total -= entry.size; }).catch(() => {});
   }
   return total;
+}
+/** Keeps the most recently used recognitions of isolated voices and removes takes left behind by an abrupt stop. */
+export async function pruneWords(keep = WORDS_KEPT, directory = wordsRoot) {
+  const kept = [];
+  for (const name of await readdir(directory).catch(() => [])) {
+    const file = path.join(directory, name), info = await stat(file).catch(() => null);
+    if (!info?.isFile()) continue;
+    if (name.endsWith('.wav') && Date.now() - info.mtimeMs > 3600000) await rm(file, { force: true }).catch(() => {});
+    else if (/^[a-f0-9]{64}_[a-z]{2,4}\.json$/.test(name)) kept.push({ file, used: info.mtimeMs });
+  }
+  for (const entry of kept.sort((a, b) => b.used - a.used).slice(keep)) await rm(entry.file, { force: true }).catch(() => {});
+  return Math.min(kept.length, keep);
 }
 export function terminateProcess(child) {
   if (!child?.pid) return;
@@ -149,6 +163,7 @@ export function preparationPlugin() {
   }, 60000); cleanup.unref();
   void sweepStaleJobs();
   void pruneTransposed();
+  void pruneWords();
 
   // One transposition at a time: each one keeps a CPU core busy for a few seconds per minute of audio.
   let transposing = Promise.resolve(), transposer = null;
@@ -193,6 +208,65 @@ export function preparationPlugin() {
     const stream = createReadStream(cached); stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
   }
 
+  // Speech recognition of a take, or of a song's isolated voice, one at a time: the model fills much of the GPU.
+  let recognising = Promise.resolve(), recogniser = null, wordsRuntime = null;
+  function checkWords() {
+    if (wordsRuntime) return wordsRuntime;
+    if (!existsSync(python)) return Promise.resolve({ ready: false });
+    wordsRuntime = new Promise(resolve => {
+      const child = spawn(python, [wordsScript, '--check'], { cwd: root, windowsHide: true, env: { ...process.env, PYTHONUTF8: '1', NUMBA_CACHE_DIR: path.join(root, '.local/audio/numba') } });
+      let output = '';
+      child.stdout.on('data', data => { output = (output + data).slice(-4000); });
+      const timeout = setTimeout(() => child.kill(), 90000);
+      const fail = () => { clearTimeout(timeout); wordsRuntime = null; resolve({ ready: false }); };
+      child.on('error', fail);
+      child.on('close', code => { clearTimeout(timeout); try { if (code !== 0) throw new Error(); resolve(JSON.parse(output.trim().split('\n').at(-1))); } catch { fail(); } });
+    });
+    return wordsRuntime;
+  }
+  async function recognise(req, res, json) {
+    const runtime = await checkWords();
+    if (!runtime.ready) return json({ error: 'Evaluar la letra necesita el reconocimiento de voz del motor local. Ejecuta npm run audio:setup en la carpeta del proyecto.' }, 503);
+    const hash = req.headers['x-audio-sha256'], language = req.headers['x-language'] || '', length = Number(req.headers['content-length']), keep = req.headers['x-keep'] === '1';
+    if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) return json({ error: 'Falta la identificación del audio.' }, 400);
+    if (typeof language !== 'string' || (language && !/^[a-z]{2}$/.test(language))) return json({ error: 'El idioma indicado no es válido.' }, 400);
+    if (!Number.isFinite(length) || length <= 0 || length > WORDS_BYTES) return json({ error: 'El audio debe ocupar hasta 128 MB.' }, 413);
+    await mkdir(wordsRoot, { recursive: true });
+    // A song's isolated voice is recognised once; a take is never kept.
+    const cached = keep ? path.join(wordsRoot, `${hash}_${language || 'auto'}.json`) : null;
+    if (cached && existsSync(cached)) {
+      req.resume(); await new Promise(resolve => { req.on('end', resolve); req.on('error', resolve); });
+      const now = new Date(); await utimes(cached, now, now).catch(() => {});
+      return json(JSON.parse(await readFile(cached, 'utf8')));
+    }
+    const input = path.join(wordsRoot, `${randomUUID()}.wav`);
+    try {
+      const digest = createHash('sha256'), file = createWriteStream(input); let received = 0;
+      for await (const chunk of req) { received += chunk.length; if (received > WORDS_BYTES) throw new Error('Archivo demasiado grande.'); digest.update(chunk); if (!file.write(chunk)) await new Promise(resolve => file.once('drain', resolve)); }
+      await new Promise((resolve, reject) => { file.on('error', reject); file.end(resolve); });
+      if (digest.digest('hex') !== hash) return json({ error: 'El audio recibido no coincide con el indicado.' }, 400);
+      const task = recognising.catch(() => {}).then(() => new Promise((resolve, reject) => {
+        if (res.destroyed) return reject(new Error('Petición cancelada.'));
+        const child = spawn(python, [wordsScript, '--input', input, '--cache', path.join(root, '.local/audio/models'), ...(language ? ['--language', language] : [])], { cwd: root, windowsHide: true, env: { ...process.env, PYTHONUTF8: '1', NUMBA_CACHE_DIR: path.join(root, '.local/audio/numba') } });
+        recogniser = child;
+        let output = '';
+        const abandon = () => terminateProcess(child); res.once('close', abandon);
+        const timeout = setTimeout(abandon, 10 * 60000);
+        child.stdout.on('data', bytes => { output = (output + bytes).slice(-4 * 1024 * 1024); });
+        child.on('error', reject);
+        child.on('close', code => {
+          clearTimeout(timeout); res.off('close', abandon); recogniser = null;
+          let result; try { result = JSON.parse(output.trim().split('\n').at(-1)); } catch { result = null; }
+          code === 0 && result && !result.error ? resolve(result) : reject(new Error(result?.error ? `No se pudo reconocer la letra: ${result.error}` : 'No se pudo reconocer la letra.'));
+        });
+      }));
+      recognising = task;
+      const result = await task;
+      if (cached) { await writeFile(cached, JSON.stringify(result)); void pruneWords(); }
+      if (!res.destroyed) json(result);
+    } finally { await rm(input, { force: true }).catch(() => {}); }
+  }
+
   const middleware = async (req, res, next) => {
     const url = new URL(req.url || '/', 'http://localhost');
     if (!url.pathname.startsWith('/api/preparation/')) return next();
@@ -202,8 +276,10 @@ export function preparationPlugin() {
       if (url.pathname === '/api/preparation/status' && req.method === 'GET') return json({ ...await checkRuntime(), token, active: active ? publicJob(jobs.get(active)) : null });
       // Moving a key needs only FFmpeg, not the Python check the status waits for.
       if (url.pathname === '/api/preparation/transpose' && req.method === 'GET') { const ffmpeg = findFfmpeg(); return json({ available: !!ffmpeg && await supportsRubberband(ffmpeg), token }); }
+      if (url.pathname === '/api/preparation/words' && req.method === 'GET') { const runtime = await checkWords(); return json({ available: !!runtime.ready, device: runtime.device || null, token }); }
       if (req.headers['x-encore-token'] !== token) return json({ error: 'La sesión del motor cambió. Actualiza su estado y vuelve a intentar.' }, 403);
       if (url.pathname === '/api/preparation/transpose' && req.method === 'POST') return await transpose(req, res, json);
+      if (url.pathname === '/api/preparation/words' && req.method === 'POST') return await recognise(req, res, json);
       if (['/api/preparation/jobs', '/api/preparation/analysis'].includes(url.pathname) && req.method === 'POST') {
         const analysisOnly = url.pathname === '/api/preparation/analysis';
         const limit = analysisOnly ? 128 * 1024 * 1024 : MAX_BYTES;
@@ -247,6 +323,6 @@ export function preparationPlugin() {
       const stream = createReadStream(file); stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
     } catch (error) { if (!res.headersSent && !res.destroyed) json({ error: error.message || 'No se pudo preparar la canción.' }, 500); }
   };
-  const configure = server => { server.middlewares.use(middleware); server.httpServer?.once('close', () => { clearInterval(cleanup); terminateProcess(transposer); for (const job of jobs.values()) { job.state = 'cancelled'; terminateProcess(job.child); } }); };
+  const configure = server => { server.middlewares.use(middleware); server.httpServer?.once('close', () => { clearInterval(cleanup); terminateProcess(transposer); terminateProcess(recogniser); for (const job of jobs.values()) { job.state = 'cancelled'; terminateProcess(job.child); } }); };
   return { name: 'encore-preparation', configureServer: configure, configurePreviewServer: configure };
 }
