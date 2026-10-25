@@ -15,6 +15,8 @@ Actualización del 15: el usuario aprobó el progreso de biblioteca y pidió aut
 | 5. Salas y duelos | Turnos, cola compartida, reacciones y puntuaciones | Pruebas con varios clientes, reloj compartido, reconexión, autorización de acciones y comparabilidad de mapas/puntajes |
 | 6. Palabras cantadas | Evaluación experimental por frase y confianza visible | Contrastar palabras correctas, omitidas e incorrectas con varios acentos; errores e incertidumbre documentados, sin confundir alineación con reconocimiento |
 
+Estado al 25 de octubre de 2026: etapas 1 y 2 probadas con el usuario, incluidas la separación de voz, el mapa automático, la escala de la grabación y el motor en la gráfica. Etapa 3 entregada para su revisión: ensayo por frases, cambio de tono, historial de intentos, vista de progreso, rango cómodo y tono sugerido. La etapa 6 se adelantó a petición del usuario como evaluación experimental de la letra. Siguen la 4 y la 5.
+
 ## Orden y decisiones
 
 Empezar con web React + TypeScript valida el motor en la computadora. El núcleo musical y el formato del mapa se mantienen independientes de la interfaz para futura adaptación móvil. Una app React Native deberá validar su propia captura y latencia; no se presupone reutilización íntegra del motor Web Audio.

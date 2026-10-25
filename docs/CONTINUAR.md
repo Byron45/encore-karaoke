@@ -1,8 +1,14 @@
-# Punto de continuación · revisión 2M terminada
+# Punto de continuación · etapa 3 entregada para revisión
+
+25 de octubre de 2026. El usuario pidió pasar a las siguientes fases. Se completó la etapa 3: vista **Tu progreso** (gráfica por canción, tabla de intentos, minutos cantados), **rango cómodo** a partir de los histogramas de voz de cada toma (el suyo: Mi3–Mi4), **tono sugerido** por canción en el escenario con botón para aplicarlo, y tarjeta **Para practicar** con las frases de peor media. El historial conserva el resumen de los intentos antiguos para el progreso. Detalle en `docs/NOTAS-TECNICAS.md`, sección «Tu progreso y rango cómodo».
+
+Siguiente: etapa 4, «Encuentra tu canción». La búsqueda por mood necesita un modelo de embeddings multilingüe (descarga pendiente del permiso del usuario); los filtros por idioma, década y dificultad (rango de la canción frente al suyo) no necesitan descargas. Después, etapa 5 (cantar en compañía).
+
+## Revisión 2M
 
 22 de octubre de 2026: tres tomas nuevas (7.930, 7.772 y 6.607, sin la letra evaluada). Cada toma se guarda ahora en el historial en cuanto termina, y la letra la actualiza después; antes, con la letra activada, se guardaba al final del análisis. `scripts/mis-intentos.js` lista el historial desde la consola. Pendiente: que el usuario confirme con esa consulta qué quedó guardado, y que pruebe Evaluar la letra cantando una palabra mal a propósito. Detalle en `docs/NOTAS-TECNICAS.md`, sección 2M.
 
-## Última revisión: gráfica NVIDIA y evaluación de la letra
+## Revisión 2L: gráfica NVIDIA y evaluación de la letra
 
 21 de octubre de 2026. El usuario autorizó las descargas (unos 3 GB de PyTorch y ONNX Runtime con CUDA, y Whisper con su modelo turbo de 1,5 GB) y pidió hacer los cambios necesarios. Revisión 2L:
 

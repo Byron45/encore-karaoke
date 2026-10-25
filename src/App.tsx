@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, ArrowDownToLine, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, FlaskConical, Headphones, ListMusic, Mic2, Play, SlidersHorizontal, Square, Trophy, X } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Activity, ArrowDownToLine, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, FlaskConical, Headphones, ListMusic, Mic2, Play, SlidersHorizontal, Square, Target, TrendingUp, Trophy, X } from 'lucide-react';
 import { emptyFrame, KaraokeEngine } from './audio';
 import type { Frame, Mode, Summary } from './audio';
 import { Stage } from './Stage';
@@ -22,23 +22,30 @@ import { useMicrophones } from './useMicrophones';
 import { MicrophonePanel } from './MicrophonePanel';
 import { PhraseReview } from './PhraseReview';
 import { TakeHistory } from './TakeHistory';
-import { saveTake, updateTake } from './take-history';
+import { listSummaries, saveTake, updateTake } from './take-history';
+import { songRange, suggestKey, summarizeTake, voiceRange, weakPhrases } from './progress';
+import type { TakeSummary } from './progress';
+import { Progress } from './ProgressView';
+import { getSong } from './library-store';
+import { noteName } from './song';
 import { canTranspose, KEY_STEPS, keyLabel, transposedAudio } from './transpose';
 import { recordingReference, voiceReadings } from './voice-reference';
 import type { RecordingReference } from './voice-reference';
 
 import type { Accompaniment } from './preparation';
 
-type View = 'stage' | 'roadmap' | 'library';
+type View = 'stage' | 'roadmap' | 'library' | 'progress';
 type Status = 'idle' | 'starting' | 'running' | 'finished';
 const stages = [
-  { title: 'El primer escenario', description: 'Micrófono, melodía original, letras y puntuación local.', check: 'Notas conocidas, silencio, ruido, octavas y flujo en navegador.' },
-  { title: 'Tu biblioteca', description: 'Carga de audio, mapa musical y búsqueda de metadatos con MusicBrainz.', check: 'Archivo y versión correctos; validación del mapa; errores y límites de la API.' },
-  { title: 'Una experiencia a tu medida', description: 'Ensayo por frases, ajuste de tonalidad e historial personal.', check: 'Progreso guardado, transposición coherente y calibración en dispositivos reales.' },
-  { title: 'Encuentra tu canción', description: 'Búsqueda por mood, idioma, década y dificultad.', check: 'Consultas de referencia y relevancia de resultados; respuestas sin coincidencias.' },
-  { title: 'Cantar en compañía', description: 'Salas por turnos, cola compartida y duelos.', check: 'Sincronización, reconexión y puntuaciones comparables entre participantes.' },
-  { title: 'Más allá de las notas', description: 'Evaluación experimental de palabras cantadas por frase.', check: 'Letras correctas e incorrectas, acentos y ruido; incertidumbre visible.' },
+  { title: 'El primer escenario', status: 'PROBADA CONTIGO', description: 'Micrófono, melodía original, letras y puntuación local.', check: 'Notas conocidas, silencio, ruido, octavas y flujo en navegador.' },
+  { title: 'Tu biblioteca', status: 'PROBADA CONTIGO', description: 'Carga de audio, mapa musical y búsqueda de metadatos con MusicBrainz.', check: 'Archivo y versión correctos; validación del mapa; errores y límites de la API.' },
+  { title: 'Una experiencia a tu medida', status: 'EN REVISIÓN', description: 'Ensayo por frases, cambio de tono, historial, tu progreso y tu rango cómodo.', check: 'Progreso guardado, transposición coherente y calibración en dispositivos reales.' },
+  { title: 'Encuentra tu canción', status: 'PRÓXIMAMENTE', description: 'Búsqueda por mood, idioma, década y dificultad.', check: 'Consultas de referencia y relevancia de resultados; respuestas sin coincidencias.' },
+  { title: 'Cantar en compañía', status: 'PRÓXIMAMENTE', description: 'Salas por turnos, cola compartida y duelos.', check: 'Sincronización, reconexión y puntuaciones comparables entre participantes.' },
+  { title: 'Más allá de las notas', status: 'ADELANTADA · EXPERIMENTAL', description: 'Evaluación experimental de palabras cantadas por frase.', check: 'Letras correctas e incorrectas, acentos y ruido; incertidumbre visible.' },
 ];
+// The stage being reviewed with the singer.
+const CURRENT_STAGE = 2;
 
 /** What 10,000 points stand for in this result: the recording's own voice, the general scale or the tuner. */
 function scaleNote(summary: Summary, recording: RecordingReference | null | undefined, previousSeparator: boolean) {
@@ -98,6 +105,8 @@ export default function App() {
   // The same session as a ref, so the take can be stored the moment it ends with what the result shows.
   const session = useRef(sessionInfo);
   const [historyVersion, setHistoryVersion] = useState(0);
+  // What every kept take adds to the progress view, the comfortable range and the phrases to practise.
+  const [summaries, setSummaries] = useState<TakeSummary[]>([]);
   const monitor = useRef<MicrophoneMonitor | null>(null);
   const engine = useRef<KaraokeEngine | null>(null);
   const resultHeading = useRef<HTMLHeadingElement>(null);
@@ -141,6 +150,21 @@ export default function App() {
     void canRecogniseWords(controller.signal).then(({ available }) => { if (!controller.signal.aborted) setWordsAvailable(available); });
     return () => controller.abort();
   }, [scored, cues, wordsAvailable]);
+
+  useEffect(() => {
+    let alive = true;
+    listSummaries().then(list => { if (alive) setSummaries(list); }, () => {});
+    return () => { alive = false; };
+    // Read again on entering the progress view: another tab may have added takes.
+  }, [historyVersion, view === 'progress']);
+  const range = useMemo(() => voiceRange(summaries), [summaries]);
+  const fit = useMemo(() => { const own = songRange(song.notes); return range && own ? { own, key: suggestKey(range, own) } : null; }, [range, song.notes]);
+  const practise = useMemo(() => song.id ? weakPhrases(summaries, song.id, song.phrases.length) : [], [summaries, song.id, song.phrases.length]);
+  const phrasesOf = useCallback(async (songId: string) => { try { const record = await getSong(songId); return record ? playable(record).phrases : null; } catch { return null; } }, []);
+  async function singFromProgress(songId: string) {
+    try { const record = await getSong(songId); if (!record) throw new Error('Esa canción ya no está en tu biblioteca.'); selectSong(playable(record)); }
+    catch (failure) { setError((failure as Error).message); setView('stage'); }
+  }
 
   function updateSession(next: SessionInfo | ((info: SessionInfo) => SessionInfo)) {
     session.current = typeof next === 'function' ? next(session.current) : next;
@@ -247,7 +271,10 @@ export default function App() {
       // Kept in this browser the moment it ends, so a result that was not downloaded is never lost; the lyrics check,
       // when there is one, replaces it once it is done.
       const info = session.current, createdAt = new Date().toISOString();
-      const entry = (take: Summary) => ({ createdAt, songId: songKey, song: song.title, difficulty: take.difficulty, score: take.score, transpose: info.transpose, ...(phrase === undefined ? {} : { phrase }), document: JSON.stringify(resultDocument(take, nextMode, info, song), null, 2) });
+      const entry = (take: Summary) => {
+        const document = resultDocument(take, nextMode, info, song), meta = { createdAt, songId: songKey, song: song.title };
+        return { ...meta, difficulty: take.difficulty, score: take.score, transpose: info.transpose, ...(phrase === undefined ? {} : { phrase }), document: JSON.stringify(document, null, 2), summary: summarizeTake(document, meta) };
+      };
       const saved: Promise<string | null> = nextMode === 'microphone' && song.notes.length ? saveTake(entry(final)) : Promise.resolve(null);
       saved.then(() => setHistoryVersion(value => value + 1), failure => setError(`No se pudo guardar este intento en el historial del navegador: ${(failure as Error).message} Descarga el resultado para conservarlo.`));
       const mark = (take: Summary, shown = true) => {
@@ -290,14 +317,15 @@ export default function App() {
       <nav aria-label="Navegación principal">
         <button className={view === 'stage' ? 'nav-item selected' : 'nav-item'} onClick={() => navigate('stage')}><Mic2 size={19}/> Escenario <ChevronRight size={15}/></button>
         <button aria-label="Biblioteca" title="Biblioteca" className={view === 'library' ? 'nav-item selected' : 'nav-item'} onClick={() => navigate('library')}><ListMusic size={19}/> Biblioteca</button>
+        <button aria-label="Tu progreso" title="Tu progreso" className={view === 'progress' ? 'nav-item selected' : 'nav-item'} onClick={() => navigate('progress')}><TrendingUp size={19}/> Tu progreso</button>
         <button aria-label="Nuestro proyecto" title="Nuestro proyecto" className={view === 'roadmap' ? 'nav-item selected' : 'nav-item'} onClick={() => navigate('roadmap')}><FlaskConical size={19}/> Nuestro proyecto <span className="tiny-tag">6</span></button>
       </nav>
-      <div className="sidebar-note"><span className="lab-icon"><FlaskConical size={19}/></span><strong>Todo empieza con tu voz.</strong><p>Estamos construyendo tu karaoke, una buena nota a la vez.</p><span className="version">ETAPA 02 <span>·</span> BIBLIOTECA</span></div>
+      <div className="sidebar-note"><span className="lab-icon"><FlaskConical size={19}/></span><strong>Todo empieza con tu voz.</strong><p>Estamos construyendo tu karaoke, una buena nota a la vez.</p><span className="version">ETAPA 03 <span>·</span> A TU MEDIDA</span></div>
       <button className="help-button" onClick={() => setHelp(value => !value)} aria-expanded={help}><CircleHelp size={18}/> Cómo funciona</button>
       <div className="profile"><div className="avatar">TÚ</div><div><strong>Tu estudio personal</strong><span>Práctica local</span></div><span className="local-mark" title="El audio se procesa en tu dispositivo"/></div>
     </aside>
     <main>
-      <header className="topbar"><div><span className="breadcrumb">Tu espacio</span><ChevronRight size={14}/><span>{view === 'stage' ? 'Escenario' : view === 'library' ? 'Biblioteca' : 'Nuestro proyecto'}</span></div><span className="private-label"><span/> Audio en tu dispositivo</span></header>
+      <header className="topbar"><div><span className="breadcrumb">Tu espacio</span><ChevronRight size={14}/><span>{view === 'stage' ? 'Escenario' : view === 'library' ? 'Biblioteca' : view === 'progress' ? 'Tu progreso' : 'Nuestro proyecto'}</span></div><span className="private-label"><span/> Audio en tu dispositivo</span></header>
       <div className="page-content">
         {help ? <div className="help-panel"><div><strong>Así se canta en Encore</strong><p>Conecta auriculares, escucha la melodía y canta las palabras siguiendo las barras. La altura indica la nota; el largo, cuánto sostenerla. La evaluación mide afinación y duración: todavía no reconoce las palabras. Tu voz no se graba ni se envía a un servidor.</p></div><button className="icon-button" aria-label="Cerrar ayuda" onClick={() => setHelp(false)}><X size={19}/></button></div> : null}
         {view === 'stage' ? <>
@@ -322,18 +350,18 @@ export default function App() {
               {scored ? <section className="score-card"><div className="card-heading"><span>TU ACTUACIÓN</span><Trophy size={17}/></div><div className="score-number">{summary.score.toLocaleString('es-EC')}<span> / 10.000</span></div><p>{mode === 'demo' && (busy || result) ? 'Puntos de demostración' : 'Cada nota suma'}</p>{best !== null ? <p className="personal-best">Tu mejor marca: {best.toLocaleString('es-EC')} · {DIFFICULTIES[difficulty].label}</p> : null}<div className="score-divider"/><div className="metric"><span>Afinación + duración</span><strong>{summary.accuracy}%</strong></div><div className="metric-meter"><span style={{ width: `${summary.accuracy}%` }}/></div><div className="metric"><span>Afinación al cantar</span><strong>{summary.intonation === null ? "—" : `${summary.intonation}%`}</strong></div>{summary.lyrics ? <div className="metric"><span>Letra</span><strong>{Math.round(summary.lyrics.score * 100)}%</strong></div> : null}<div className="two-metrics"><div><strong>{summary.bestCombo}<small> notas</small></strong><span>Mejor racha</span></div><div><strong>{summary.coverage}<small>%</small></strong><span>Cobertura de notas</span></div></div></section> : <section className="score-card free-score"><span className="eyebrow">CANTO LIBRE</span><h2>Sin puntuación</h2><p>Sigue la letra y disfruta tu canción. Cuando tengamos un mapa de notas, podremos evaluar afinación y duración.</p><p>{song.lyrics?.format === 'lrc' ? 'La letra se sincroniza por líneas; todavía no se evalúan palabras.' : 'Esta letra no tiene tiempos: desplázala a tu ritmo. Todavía no se evalúan palabras.'}</p></section>}
               <section className="settings-card"><div className="card-heading"><span>PREPARA TU VOZ</span><SlidersHorizontal size={17}/></div>
                 <MicrophonePanel devices={microphones.devices} deviceId={microphones.deviceId} onSelect={selectMicrophone} onRefresh={() => void microphones.refresh()} listError={microphones.listError} active={activeMicrophone} testing={probeState === 'listening'} connecting={probeState === 'starting'} singing={status === 'running' && mode === 'microphone'} locked={busy} reading={probeState !== 'idle' ? probeReading : busy && mode === 'microphone' ? frame : { rms: 0, frequency: null }} onTest={testMicrophone} onStop={stopProbe} transpose={transpose} firstMidi={song.notes[0]?.midi}/>
-                {song.audio ? <div className="register-control"><label htmlFor="register">Tono de la canción</label><select id="register" value={transpose} disabled={busy || !keyAvailable} onChange={event => { setTranspose(Number(event.target.value)); setResult(null); setFrame(emptyFrame()); }}>{KEY_STEPS.map(steps => <option key={steps} value={steps}>{keyLabel(steps)}</option>)}</select><p>{keyAvailable ? 'Sube o baja la música y las notas a evaluar sin cambiar el ritmo. Si la canción te queda alta, bájala uno o dos semitonos.' : keyAvailable === false ? 'Cambiar el tono necesita el motor local de audio (npm run audio:setup). Con exigencia Normal o Relajada puedes cantar en la octava que te resulte cómoda.' : 'Comprobando si este equipo puede cambiar el tono…'}</p></div> : <div className="register-control"><label htmlFor="register">Registro de práctica</label><select id="register" value={transpose} disabled={busy} onChange={event => setTranspose(Number(event.target.value))}><option value={-12}>Grave · una octava abajo</option><option value={0}>Original</option><option value={12}>Agudo · una octava arriba</option></select><p>Cambia la altura de la guía y las notas a evaluar. Elige una altura cómoda para tu voz.</p></div>}
+                {song.audio ? <div className="register-control"><label htmlFor="register">Tono de la canción</label><select id="register" value={transpose} disabled={busy || !keyAvailable} onChange={event => { setTranspose(Number(event.target.value)); setResult(null); setFrame(emptyFrame()); }}>{KEY_STEPS.map(steps => <option key={steps} value={steps}>{keyLabel(steps)}</option>)}</select>{fit && range ? <p className="key-advice"><Target size={14}/><span>{fit.key.steps === 0 && fit.key.octave === 0 ? `Para tu voz (${noteName(range.low)}–${noteName(range.high)}) el tono original te queda bien: la canción va de ${noteName(fit.own.low)} a ${noteName(fit.own.high)}.` : `Para tu voz (${noteName(range.low)}–${noteName(range.high)}) te conviene ${fit.key.steps ? keyLabel(fit.key.steps).toLowerCase() : 'el tono original'}${fit.key.octave ? `, cantando una octava más ${fit.key.octave < 0 ? 'grave' : 'aguda'} que la grabación (Relajada y Normal lo aceptan)` : ''}: la canción va de ${noteName(fit.own.low)} a ${noteName(fit.own.high)}.`}{fit.key.steps && keyAvailable && transpose !== fit.key.steps ? <button className="text-button" disabled={busy} onClick={() => { setTranspose(fit.key.steps); setResult(null); setFrame(emptyFrame()); }}>Usar {fit.key.steps > 0 ? '+' : '−'}{Math.abs(fit.key.steps)}</button> : null}</span></p> : null}<p>{keyAvailable ? 'Sube o baja la música y las notas a evaluar sin cambiar el ritmo. Si la canción te queda alta, bájala uno o dos semitonos.' : keyAvailable === false ? 'Cambiar el tono necesita el motor local de audio (npm run audio:setup). Con exigencia Normal o Relajada puedes cantar en la octava que te resulte cómoda.' : 'Comprobando si este equipo puede cambiar el tono…'}</p></div> : <div className="register-control"><label htmlFor="register">Registro de práctica</label><select id="register" value={transpose} disabled={busy} onChange={event => setTranspose(Number(event.target.value))}><option value={-12}>Grave · una octava abajo</option><option value={0}>Original</option><option value={12}>Agudo · una octava arriba</option></select><p>Cambia la altura de la guía y las notas a evaluar. Elige una altura cómoda para tu voz.</p></div>}
                 {scored ? <div className="register-control"><label htmlFor="difficulty">Exigencia de afinación</label><select id="difficulty" value={difficulty} disabled={busy} onChange={event => { const value = event.target.value as Difficulty; setDifficulty(value); storeDifficulty(value); }}><option value="relaxed">Relajada · un semitono</option><option value="normal">Normal · medio semitono</option><option value="strict">Estricta · como un afinador</option></select><p>{DIFFICULTIES[difficulty].foldOctaves ? `Margen de ±${DIFFICULTIES[difficulty].full} cents. Cuenta la nota, no su altura: canta en la octava que te resulte cómoda.` : 'Margen de ±35 cents, en la octava exacta y siguiendo los matices de la referencia.'}</p></div> : null}
                 {song.audio ? <div className="accompaniment-control"><label htmlFor="accompaniment">Acompañamiento</label><select id="accompaniment" value={accompaniment} disabled={busy} onChange={event => { setAccompaniment(event.target.value as Accompaniment); setResult(null); setFrame(emptyFrame()); if (event.target.value !== 'original') setGuide(false); }}><option value="original">Fácil · voz original</option><option value="reduced" disabled={!song.prepared}>Intermedio · voz al 25 %</option><option value="instrumental" disabled={!song.prepared}>Difícil · solo instrumental</option></select><p className="settings-hint">{song.prepared ? 'Las tres opciones conservan la letra y las mismas notas de referencia.' : 'Prepara las pistas desde la biblioteca para habilitar más opciones.'}</p></div> : null}
                 {scored ? <label className="toggle-row"><span>Evaluar la letra<small>{!cues.length ? 'Necesita la letra con tiempos (LRC) de la biblioteca.' : wordsAvailable === null ? 'Comprobando el reconocimiento de voz…' : !wordsAvailable ? 'Necesita el reconocimiento de voz del motor local (npm run audio:setup).' : 'Experimental. Graba tu voz en este equipo, la compara con la letra y resta hasta un 20 %.'}</small></span><input type="checkbox" role="switch" checked={checkingLyrics} disabled={busy || !lyricsUsable} onChange={event => { setLyricsCheck(event.target.checked); storeLyricsCheck(event.target.checked); }}/></label> : null}<label className="toggle-row"><span>Escuchar melodía guía<small>Te ayuda a encontrar las notas</small></span><input type="checkbox" role="switch" checked={scored && guide} disabled={busy || !scored} onChange={event => setGuide(event.target.checked)}/></label><div className="offset-control"><label htmlFor="offset">Compensar retraso <span>{offset === null ? 'Automático' : `${offset} ms`}</span></label><input id="offset" type="range" min="0" max="300" step="10" value={offset ?? result?.capture?.offsetMs ?? 0} disabled={busy} onChange={event => chooseOffset(Number(event.target.value))}/><p>{offset === null ? 'Se usa el retraso que informa tu equipo. Al terminar una canción te proponemos otro valor si tu voz encaja mejor con él.' : <>Ajuste guardado para este micrófono. <button className="text-button" disabled={busy} onClick={() => chooseOffset(null)}>Volver a automático</button></>}</p></div></section>
-              <div className="next-step"><div><Activity size={17}/><span>CONSTRUYENDO JUNTOS</span></div><strong>Tu biblioteca ya tiene escenario.</strong><p>Carga un audio y prepara sus letras y notas, o prueba el ejemplo editable.</p><button className="text-button" onClick={() => navigate('library')}>Abrir biblioteca <ArrowRight size={16}/></button></div>
+              {practise.length ? <section className="settings-card practice-card" aria-label="Frases para practicar"><div className="card-heading"><span>PARA PRACTICAR</span><Target size={17}/></div><p className="settings-hint">Las frases que peor te salen en tus últimos {practise[0].takes} {practise[0].takes === 1 ? 'intento' : 'intentos'} de esta canción.</p><ul>{practise.map(item => <li key={item.phrase}><div><strong>Frase {item.phrase + 1} · {item.accuracy} %</strong><q>{song.phrases[item.phrase]}</q></div><button className="text-button" disabled={busy} aria-label={`Ensayar la frase ${item.phrase + 1}`} onClick={() => start('microphone', item.phrase)}>Ensayar</button></li>)}</ul></section> : null}<div className="next-step"><div><Activity size={17}/><span>CONSTRUYENDO JUNTOS</span></div><strong>Tu biblioteca ya tiene escenario.</strong><p>Carga un audio y prepara sus letras y notas, o prueba el ejemplo editable.</p><button className="text-button" onClick={() => navigate('library')}>Abrir biblioteca <ArrowRight size={16}/></button></div>
             </aside>
           </div>
-          <footer><span>Hecho para cantar a tu manera.</span><span>ENCORE LAB <span> / </span> V0.2</span></footer>
-        </> : view === 'library' ? <Library onDirtyChange={setLibraryDirty} onBusyChange={setLibraryBusy} onStored={refreshSong} onChoose={record => selectSong(playable(record))} onOriginal={() => selectSong(originalSong)}/> : <>
+          <footer><span>Hecho para cantar a tu manera.</span><span>ENCORE LAB <span> / </span> V0.3</span></footer>
+        </> : view === 'progress' ? <Progress takes={summaries} phrasesOf={phrasesOf} onSing={songId => void singFromProgress(songId)}/> : view === 'library' ? <Library onDirtyChange={setLibraryDirty} onBusyChange={setLibraryBusy} onStored={refreshSong} onChoose={record => selectSong(playable(record))} onOriginal={() => selectSong(originalSong)}/> : <>
           <div className="page-heading"><div><div className="eyebrow">PASO A PASO, CONTIGO</div><h1>De la primera nota<br/>a tu propio karaoke<span>.</span></h1><p>Cada etapa tiene una prueba técnica y una revisión contigo.</p></div></div>
-          <div className="roadmap-intro"><FlaskConical size={23}/><div><strong>Ahora: probar tu biblioteca</strong><p>El micrófono ya pasó tu primera revisión. En esta etapa probamos tus archivos, las notas y la identificación de versiones.</p></div><button className="secondary-button" onClick={() => navigate('library')}>Ir a la biblioteca <ArrowRight size={16}/></button></div>
-          <div className="roadmap">{stages.map((stage, i) => <section key={stage.title} className={i === 1 ? 'roadmap-row current' : 'roadmap-row'}><span className="roadmap-number">0{i + 1}</span><div><span className="eyebrow">{i === 0 ? 'PROBADA CONTIGO' : i === 1 ? 'EN REVISIÓN' : 'PRÓXIMAMENTE'}</span><h2>{stage.title}</h2><p>{stage.description}</p><div className="acceptance"><Check size={15}/><span>Evaluador: {stage.check}</span></div></div>{i === 1 ? <span className="roadmap-badge">Actual</span> : null}</section>)}</div>
+          <div className="roadmap-intro"><FlaskConical size={23}/><div><strong>Ahora: una experiencia a tu medida</strong><p>Tu biblioteca ya prepara pistas, mapas y letras. En esta etapa revisamos el ensayo por frases, el cambio de tono, tu progreso y la sugerencia de tono según tu rango cómodo.</p></div><button className="secondary-button" onClick={() => navigate('progress')}>Ver tu progreso <ArrowRight size={16}/></button></div>
+          <div className="roadmap">{stages.map((stage, i) => <section key={stage.title} className={i === CURRENT_STAGE ? 'roadmap-row current' : 'roadmap-row'}><span className="roadmap-number">0{i + 1}</span><div><span className="eyebrow">{stage.status}</span><h2>{stage.title}</h2><p>{stage.description}</p><div className="acceptance"><Check size={15}/><span>Evaluador: {stage.check}</span></div></div>{i === CURRENT_STAGE ? <span className="roadmap-badge">Actual</span> : null}</section>)}</div>
           <section className="musicbrainz-note"><ListMusic size={24}/><div><h2>MusicBrainz tiene un lugar aquí.</h2><p>Ya puedes buscar artistas, grabaciones y versiones desde tu biblioteca. MusicBrainz aporta metadatos; tú cargas el audio y preparas las letras y notas.</p><a href="https://musicbrainz.org/doc/MusicBrainz_API" target="_blank" rel="noreferrer">Consultar documentación oficial <ArrowRight size={14}/></a></div></section>
         </>}
       </div>

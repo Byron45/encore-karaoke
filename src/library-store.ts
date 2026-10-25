@@ -21,6 +21,7 @@ async function transaction<T>(mode: IDBTransactionMode, operation: (store: IDBOb
   });
 }
 export const listSongs = () => transaction('readonly', store => store.getAll()) as Promise<LibrarySong[]>;
+export const getSong = (id: string) => transaction('readonly', store => store.get(id)) as Promise<LibrarySong | undefined>;
 export async function saveSong(record: LibrarySong) {
   await transaction('readwrite', store => store.put(record));
   // Ask the browser not to evict the library under storage pressure; it may decline silently.

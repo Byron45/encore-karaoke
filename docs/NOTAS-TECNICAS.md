@@ -266,6 +266,33 @@ El usuario cantó varias canciones nuevas con la revisión 2J, notó que la punt
 
 Desde 2K cada toma con micrófono y mapa de notas se guarda al terminar (`src/take-history.ts`) en una base IndexedDB propia, `encore-takes-v1`, separada de la biblioteca para no migrarla. Se guarda el mismo documento que da «Descargar resultado» (puntuación, trazo y mapa cantado; nunca audio), unos 150–200 kB por toma, y se conservan las 60 más recientes. «Tus intentos guardados», en el escenario, las lista (canción, fecha, exigencia, tono, ensayo de frase y puntos) para descargarlas o borrarlas una a una o todas. Las tomas de demostración no se guardan.
 
+## Tu progreso y rango cómodo · etapa 3
+
+El usuario pidió pasar a las siguientes fases. De la etapa 3 («Repetir frases, rango cómodo, transponer pista y mapa, historial local») faltaban el rango cómodo y una vista de progreso.
+
+**Resumen de cada toma.** `src/progress.ts` resume el documento del resultado (`summarizeTake`): puntos, exigencia, tono, letra, precisión de cada frase y un histograma de la voz por semitono (Do2–Do6), en segundos, contado solo mientras sonaba una nota del mapa y por encima del umbral de silencio, con el retraso de captura compensado. El historial guarda ese resumen con cada toma. Pasados los 60 intentos, los antiguos pierden el documento completo pero conservan el resumen (hasta 2.000), y «Tus intentos guardados» solo lista los descargables. Las tomas anteriores obtienen el resumen de su documento al leerlas.
+
+**Rango cómodo.** `voiceRange` suma los histogramas de los últimos 20 intentos y toma los percentiles 10 y 90, con un mínimo de dos intentos y 60 s de voz. Con las tomas del usuario: **Mi3–Mi4**. Es dónde canta, no un límite fisiológico, y crece con canciones de registros distintos.
+
+**Tono sugerido.** `songRange` toma los percentiles 10 y 90 del mapa, ponderados por duración. `suggestKey` elige el desplazamiento de −5 a +5 semitonos, y opcionalmente cantar una octava por encima o por debajo (Relajada y Normal lo puntúan igual), que deja menos canción fuera del rango. Mover el tono cuesta un poco, así que el original gana si ya cabe. Con las tomas del usuario:
+
+| Canción | Mapa (p10–p90) | Sugerencia |
+| --- | --- | --- |
+| Todo lo que fue | Do#3–Sol#3 | +3 (la cantó aguda de media, +43 cents, y con frases 3 semitonos arriba) |
+| Qué distintos tú y yo | Fa3–Sol4 | −2 |
+| Luz de día, Arrancacorazones, Kilómetros | dentro de Mi3–Mi4 | tono original |
+
+**Frases para practicar.** `weakPhrases` promedia cada frase en los últimos cinco intentos completos con el mismo número de frases (un mapa distinto no se mezcla) y devuelve las tres peores por debajo del 70 %.
+
+**Interfaz.** Vista **Tu progreso** en la barra lateral, con cuatro cifras (intentos, canciones, minutos sobre las notas, rango cómodo), la lista de canciones con su último resultado y el cambio desde el primero, y el detalle de cada una:
+- Gráfica de puntos por intento: una sola serie en el verde de la app, línea de 2 px, puntos con aro, cuadrícula discreta, valor del último y del mejor, y lectura al pasar el puntero.
+- Tabla de todos los intentos.
+- Frases que más cuestan, con **Cantarla** para ir al escenario.
+
+La gráfica se dibuja al ancho real para que el texto no encoja en el teléfono. En el escenario, debajo del tono, aparece la sugerencia con un botón **Usar**, y la tarjeta **Para practicar** lista las frases con su **Ensayar**. La vista vuelve a leer el historial al abrirse. «Nuestro proyecto» muestra ahora la etapa 3 en revisión y la 6 adelantada.
+
+Pruebas: `tests/progress.test.mjs` (resumen, rango, sugerencia, frases, agrupación) y `tests/browser/progress.spec.ts` (vista, gráfica, tabla, sugerencia y su botón, ensayo desde la tarjeta y su entrada en el progreso).
+
 ## Tomas del 21 de octubre y guardado inmediato · revisión 2M
 
 El usuario añadió canciones con el motor en la gráfica («ya no se demora tanto») y envió tres tomas en Relajada, ninguna con la letra evaluada: «Todo lo que fue» 7.930 (voz original), «Arrancacorazones» 7.772 (voz original) y «Luz de día» 6.607 (voz al 25 %; antes 6.562 con las pistas del separador anterior). Las tres grabaciones fijan su propia escala (0,87–0,89). Las frases más bajas son de dos tipos: tramos con poca señal (no cantados) y frases cantadas unos 3 semitonos por encima del mapa («Todo lo que fue» en 0:43 y 2:12, «Luz de día» en 3:38), como el final de «Qué distintos tú y yo».

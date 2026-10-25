@@ -1,14 +1,20 @@
+import { summarizeTake } from './progress';
+import type { TakeSummary } from './progress';
+
 // Every scored take with the microphone, kept in this browser so a result is not lost when it was not downloaded.
 // A database of its own: the song library is never opened or migrated for it.
 const dbName = 'encore-takes-v1';
-export const MAX_TAKES = 60;
+// Full results kept to download again. Older takes keep only their summary, for the progress view, up to MAX_SUMMARIES.
+export const MAX_TAKES = 60, MAX_SUMMARIES = 2000;
 
 /** One take as listed, with the document "Descargar resultado" would have produced at the time. */
 export interface StoredTake {
   id: string; createdAt: string; songId: string; song: string;
   difficulty: string; score: number; transpose: number; phrase?: number;
-  // The downloaded result as JSON text: its pitch trace, never any audio.
+  // The downloaded result as JSON text: its pitch trace, never any audio. Empty once the take is only a summary.
   document: string;
+  // What the progress view needs; takes saved before it existed get it from their document when read.
+  summary?: TakeSummary;
 }
 
 function database(): Promise<IDBDatabase> {
@@ -30,19 +36,40 @@ async function run<T>(mode: IDBTransactionMode, operation: (store: IDBObjectStor
   });
 }
 
-/** Newest first. */
+const all = async () => ((await run('readonly', store => store.getAll()) as StoredTake[] | undefined) || []).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+/** Takes that can still be downloaded, newest first. */
 export async function listTakes(): Promise<StoredTake[]> {
-  const takes = (await run('readonly', store => store.getAll()) as StoredTake[] | undefined) || [];
-  return takes.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return (await all()).filter(take => take.document);
 }
 
-/** Keeps the take and drops the oldest beyond MAX_TAKES. */
+/** The summary of every take kept, full or summary only, newest first. */
+export async function listSummaries(): Promise<TakeSummary[]> {
+  return (await all()).flatMap(take => {
+    if (take.summary) return [take.summary];
+    try { return [summarizeTake(JSON.parse(take.document), take)]; } catch { return []; }
+  });
+}
+
+/** Keeps the take; beyond MAX_TAKES the oldest keep only their summary, and beyond MAX_SUMMARIES they go. */
 export async function saveTake(take: Omit<StoredTake, 'id'>) {
   const id = `${take.createdAt}-${crypto.randomUUID()}`;
   await run('readwrite', store => {
     store.put({ ...take, id });
-    const keys = store.index('createdAt').getAllKeys();
-    keys.onsuccess = () => { const stale = (keys.result as IDBValidKey[]).slice(0, Math.max(0, keys.result.length - MAX_TAKES)); for (const key of stale) store.delete(key); };
+    const cursor = store.index('createdAt').openCursor(null, 'prev');
+    let seen = 0;
+    cursor.onsuccess = () => {
+      const item = cursor.result; if (!item) return;
+      const stored = item.value as StoredTake;
+      seen++;
+      if (seen > MAX_SUMMARIES) item.delete();
+      else if (seen > MAX_TAKES && stored.document) {
+        let summary = stored.summary;
+        try { summary ??= summarizeTake(JSON.parse(stored.document), stored); } catch { /* A take that cannot be read keeps no summary. */ }
+        item.update({ ...stored, document: '', ...(summary ? { summary } : {}) });
+      }
+      item.continue();
+    };
   });
   return id;
 }
@@ -56,4 +83,5 @@ export async function updateTake(id: string, take: Omit<StoredTake, 'id'>) {
 }
 
 export async function deleteTake(id: string) { await run('readwrite', store => store.delete(id)); }
+/** Every take, full and summary only: the progress view starts again from nothing. */
 export async function clearTakes() { await run('readwrite', store => store.clear()); }

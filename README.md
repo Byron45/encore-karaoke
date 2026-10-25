@@ -21,6 +21,8 @@ Karaoke para practicar con tu propia música. Encore escucha tu voz por el micr�
 - **Ajustes que se adaptan a tu equipo.** Compensa el retraso de audio, ajusta la sensibilidad al nivel de tu micrófono y avisa si la música está entrando por él.
 - **Resultados explicados** por frase, con descarga en JSON, y **tu mejor marca** por canción y nivel de exigencia.
 - **Tus intentos guardados.** Cada canción que cantas con micrófono queda en el navegador en cuanto termina (los últimos 60) para descargar su resultado más tarde, aunque no lo hayas descargado al terminar.
+- **Tu progreso.** Cómo va cada canción a lo largo de tus intentos, tu rango cómodo de voz y las frases que más te cuestan, con acceso directo para ensayarlas.
+- **Un tono a tu medida.** Con tu rango medido, el escenario te dice si una canción te queda alta o baja y cuántos semitonos moverla.
 - **Ensayo por frases.** Desde el resultado, repite solo la frase que se te resiste: suena desde un poco antes y solo cuentan sus notas.
 
 ![Editor de la biblioteca: letra completa y mapa de notas de una canción](docs/img/mapa-de-notas.png)
@@ -67,7 +69,7 @@ Con letra y sin notas también puedes cantar: la app reproduce tu audio y avanza
 En el panel **Prepara tu voz**:
 
 - **Exigencia de afinación** decide cuánto margen tienes (tabla siguiente). Empieza en Relajada.
-- **Tono de la canción** sube o baja la música y las notas, de semitono en semitono. Si al terminar el resultado dice que cantaste por debajo de la nota, prueba a bajarla uno o dos. Necesita la preparación automática instalada; la primera vez con cada canción y tono tarda unos 5 segundos por minuto de canción.
+- **Tono de la canción** sube o baja la música y las notas, de semitono en semitono. Si al terminar el resultado dice que cantaste por debajo de la nota, prueba a bajarla uno o dos. Necesita la preparación automática instalada; la primera vez con cada canción y tono tarda unos 5 segundos por minuto de canción. Después de un par de canciones, debajo aparece qué tono te conviene según tu rango cómodo, con un botón para usarlo.
 - **Evaluar la letra** graba tu voz durante la canción y, al terminar, la reconoce en esta computadora (unos 15 segundos con una gráfica NVIDIA, un minuto o más sin ella). Necesita la letra con tiempos (LRC) y el motor local.
 - **Compensar retraso** empieza en automático. Al terminar una canción, si tu voz encaja mejor con otro valor, aparece un botón para usarlo; se recuerda para ese micrófono.
 
@@ -107,6 +109,8 @@ Con un semitono de margen, una nota fija bien elegida se acerca a una melodía c
 
 **Repaso.** Al terminar, cada frase tiene un botón **Ver trazo** que dibuja tu voz sobre las notas con las que se comparó: verde en la nota, ámbar cerca, rojo fuera. Sirve para distinguir si desafinaste o si el mapa no representa lo que cantaste. **Ensayar** repite esa frase sola, con la cuenta atrás y dos segundos de canción antes; los ensayos no cuentan como marca.
 
+**Tu progreso.** La vista **Tu progreso** reúne tus intentos: cuántos llevas, cuántos minutos has cantado sobre las notas, tu **rango cómodo** (las notas donde cae el 80 % de tu canto en tus últimos 20 intentos, medido mientras sonaba una nota del mapa) y, por canción, la gráfica de tus puntos, la tabla de intentos y las frases con peor media en tus últimos cinco intentos completos. Esas frases aparecen también en el escenario, en **Para practicar**, con su botón **Ensayar**. Pasados los 60 intentos, los más antiguos ya no se pueden descargar, pero su resumen se conserva para el progreso (hasta 2.000).
+
 **La letra (experimental).** Con **Evaluar la letra** activado, cada palabra de la letra cuenta si se reconoció igual o parecida en tu voz, cerca de su línea; se perdonan diferencias de escritura que suenan igual (b/v, s/z/c, h muda, *porque*/*por que*) y las palabras de más (ad libs). Las palabras que el reconocedor tampoco distingue en la voz original de la grabación no cuentan. La puntuación de la melodía se multiplica por un factor entre 0,8 (ninguna palabra) y 1 (todas). Las tomas con la letra evaluada guardan su propia mejor marca. Medido con las voces originales de cuatro canciones, el reconocedor acierta entre el 80 % y el 100 % de las palabras bien cantadas, y detectó 10 de 10 palabras cambiadas a propósito.
 
 ## Preparación automática
@@ -142,9 +146,9 @@ El mapa generado es **experimental**: puede cubrir solo parte de la canción, eq
 ## Pruebas
 
 ```bash
-npm test             # 74 pruebas unitarias: detector, puntuación, mapas, letras, comparación de la letra, cambio de tono, servicios
+npm test             # 79 pruebas unitarias: detector, puntuación, mapas, letras, comparación de la letra, progreso y rango, cambio de tono, servicios
 npm run build        # comprobación de tipos y compilación
-npm run test:browser # 44 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
+npm run test:browser # 45 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
 ```
 
 Las pruebas de navegador hacen pasar una voz sintética por el micrófono, el detector y la puntuación reales. No sustituyen una prueba con voz humana.
