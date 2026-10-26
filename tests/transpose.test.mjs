@@ -125,3 +125,30 @@ test('recognitions of isolated voices are kept up to a count, newest first; aban
     assert.deepEqual((await readdir(folder)).sort(), [name(2), name(3, 'auto'), 'new.wav', 'notes.txt'].sort());
   } finally { await rm(folder, { recursive: true, force: true }); }
 });
+
+test('meaning vectors come only for this app, within limits, normalised, from a model that stays loaded', async () => {
+  let middleware;
+  const plugin = preparationPlugin();
+  let close = () => {};
+  plugin.configureServer({ middlewares: { use: fn => { middleware = fn; } }, httpServer: { once: (_, fn) => { close = fn; } } });
+  const server = createServer((req, res) => middleware(req, res, () => { res.statusCode = 404; res.end(); }));
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}/api/preparation/meaning`;
+  try {
+    const status = await (await fetch(base)).json();
+    assert.equal(typeof status.available, 'boolean'); assert.match(status.token, /^[a-f0-9]{64}$/);
+    assert.equal((await fetch(base, { headers: { Origin: 'https://untrusted.example' } })).status, 403);
+    const send = (body, headers = {}) => fetch(base, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Encore-Token': status.token, ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+    assert.equal((await send({ kind: 'query', texts: ['hola'] }, { 'X-Encore-Token': 'otro' })).status, 403);
+    if (!status.available) return;
+    for (const body of ['no es json', { kind: 'otro', texts: ['x'] }, { kind: 'query', texts: [] }, { kind: 'query', texts: [''] }, { kind: 'query', texts: Array(65).fill('x') }, { kind: 'passage', texts: ['x'.repeat(8001)] }]) assert.equal((await send(body)).status, 400, JSON.stringify(body).slice(0, 60));
+    const first = Date.now(), answer = await (await send({ kind: 'passage', texts: ['Destapa el champagne y brindemos por nuestro amor', 'Los soldados avanzan en la batalla, la guerra no termina'] })).json();
+    assert.equal(answer.vectors.length, 2); assert.equal(answer.vectors[0].length, 384); assert.match(answer.model, /e5/);
+    assert.ok(Math.abs(Math.hypot(...answer.vectors[0]) - 1) < .01, 'normalised');
+    // Once loaded, a query is answered in a moment, and it lands nearer the text it is about.
+    const again = Date.now(), query = (await (await send({ kind: 'query', texts: ['una canción de guerra'] })).json()).vectors[0];
+    assert.ok(Date.now() - again < Math.max(2000, (Date.now() - first) / 2), `${Date.now() - again} ms`);
+    const dot = vector => vector.reduce((sum, value, i) => sum + value * query[i], 0);
+    assert.ok(dot(answer.vectors[1]) > dot(answer.vectors[0]));
+  } finally { close(); server.close(); }
+});

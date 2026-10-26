@@ -13,6 +13,7 @@ const artifactNames = new Set(['manifest.json', 'analysis.json', 'vocals.wav', '
 const MAX_BYTES = 30 * 1024 * 1024;
 const transposedRoot = path.join(root, '.local/audio/transposed');
 const wordsScript = path.join(root, 'scripts/audio/words.py'), wordsRoot = path.join(root, '.local/audio/words');
+const embedScript = path.join(root, 'scripts/audio/embed.py'), MEANING_BYTES = 1024 * 1024;
 const WORDS_BYTES = 128 * 1024 * 1024, WORDS_KEPT = 200;
 const TRANSPOSE_BYTES = 128 * 1024 * 1024, TRANSPOSE_CACHE_BYTES = 2 * 1024 ** 3, RATE = 44100;
 
@@ -267,6 +268,63 @@ export function preparationPlugin() {
     } finally { await rm(input, { force: true }).catch(() => {}); }
   }
 
+  // Meaning vectors for the mood search. The model stays loaded in one process, so a search answers in a moment; it is
+  // stopped after ten minutes without use.
+  let embedder = null, meaningRuntime = null;
+  function checkMeaning() {
+    if (meaningRuntime) return meaningRuntime;
+    if (!existsSync(python)) return Promise.resolve({ ready: false });
+    meaningRuntime = new Promise(resolve => {
+      const child = spawn(python, [embedScript, '--check'], { cwd: root, windowsHide: true, env: { ...process.env, PYTHONUTF8: '1' } });
+      let output = '';
+      child.stdout.on('data', data => { output = (output + data).slice(-4000); });
+      const timeout = setTimeout(() => child.kill(), 90000);
+      const fail = () => { clearTimeout(timeout); meaningRuntime = null; resolve({ ready: false }); };
+      child.on('error', fail);
+      child.on('close', code => { clearTimeout(timeout); try { if (code !== 0) throw new Error(); resolve(JSON.parse(output.trim().split('\n').at(-1))); } catch { fail(); } });
+    });
+    return meaningRuntime;
+  }
+  function startEmbedder() {
+    const child = spawn(python, [embedScript, '--serve', '--cache', path.join(root, '.local/audio/models')], { cwd: root, windowsHide: true, env: { ...process.env, PYTHONUTF8: '1' } });
+    const state = { child, pending: new Map(), next: 0, idle: null, ready: null };
+    let buffer = '', started;
+    state.ready = new Promise((resolve, reject) => { started = { resolve, reject }; });
+    const stop = message => { for (const job of state.pending.values()) job.reject(new Error(message)); state.pending.clear(); started.reject(new Error(message)); if (embedder === state) embedder = null; };
+    child.stdout.on('data', bytes => {
+      buffer += bytes; const lines = buffer.split('\n'); buffer = lines.pop();
+      for (const line of lines) {
+        let answer; try { answer = JSON.parse(line); } catch { continue; }
+        if (answer.ready) { started.resolve(answer); continue; }
+        const job = state.pending.get(answer.id); if (!job) continue;
+        state.pending.delete(answer.id);
+        answer.error ? job.reject(new Error(answer.error)) : job.resolve(answer.vectors);
+      }
+    });
+    child.stdin.on('error', () => {});
+    child.on('error', () => stop('No se pudo iniciar el modelo de significado.'));
+    child.on('close', () => stop('El modelo de significado se detuvo.'));
+    return state;
+  }
+  async function meaning(req, res, json) {
+    if (!(await checkMeaning()).ready) return json({ error: 'La búsqueda por significado necesita el motor local. Ejecuta npm run audio:setup en la carpeta del proyecto.' }, 503);
+    const length = Number(req.headers['content-length']);
+    if (!Number.isFinite(length) || length <= 0 || length > MEANING_BYTES) return json({ error: 'La petición debe ocupar hasta 1 MB.' }, 413);
+    let body = '';
+    for await (const chunk of req) { body += chunk; if (body.length > MEANING_BYTES) return json({ error: 'La petición debe ocupar hasta 1 MB.' }, 413); }
+    let request; try { request = JSON.parse(body); } catch { return json({ error: 'La petición no es JSON válido.' }, 400); }
+    const { kind, texts } = request || {};
+    if (!['query', 'passage'].includes(kind)) return json({ error: 'Indica si es una búsqueda o un texto de canción.' }, 400);
+    if (!Array.isArray(texts) || !texts.length || texts.length > 64 || texts.some(text => typeof text !== 'string' || !text.trim() || text.length > 8000)) return json({ error: 'Envía de 1 a 64 textos de hasta 8.000 caracteres.' }, 400);
+    embedder ??= startEmbedder();
+    const state = embedder, info = await state.ready;
+    clearTimeout(state.idle);
+    const id = ++state.next;
+    const vectors = await new Promise((resolve, reject) => { state.pending.set(id, { resolve, reject }); state.child.stdin.write(JSON.stringify({ id, kind, texts }) + '\n'); });
+    state.idle = setTimeout(() => terminateProcess(state.child), 10 * 60000); state.idle.unref?.();
+    return json({ model: info.model, device: info.device, vectors });
+  }
+
   const middleware = async (req, res, next) => {
     const url = new URL(req.url || '/', 'http://localhost');
     if (!url.pathname.startsWith('/api/preparation/')) return next();
@@ -276,10 +334,12 @@ export function preparationPlugin() {
       if (url.pathname === '/api/preparation/status' && req.method === 'GET') return json({ ...await checkRuntime(), token, active: active ? publicJob(jobs.get(active)) : null });
       // Moving a key needs only FFmpeg, not the Python check the status waits for.
       if (url.pathname === '/api/preparation/transpose' && req.method === 'GET') { const ffmpeg = findFfmpeg(); return json({ available: !!ffmpeg && await supportsRubberband(ffmpeg), token }); }
+      if (url.pathname === '/api/preparation/meaning' && req.method === 'GET') { const runtime = await checkMeaning(); return json({ available: !!runtime.ready, model: runtime.model || null, token }); }
       if (url.pathname === '/api/preparation/words' && req.method === 'GET') { const runtime = await checkWords(); return json({ available: !!runtime.ready, device: runtime.device || null, token }); }
       if (req.headers['x-encore-token'] !== token) return json({ error: 'La sesión del motor cambió. Actualiza su estado y vuelve a intentar.' }, 403);
       if (url.pathname === '/api/preparation/transpose' && req.method === 'POST') return await transpose(req, res, json);
       if (url.pathname === '/api/preparation/words' && req.method === 'POST') return await recognise(req, res, json);
+      if (url.pathname === '/api/preparation/meaning' && req.method === 'POST') return await meaning(req, res, json);
       if (['/api/preparation/jobs', '/api/preparation/analysis'].includes(url.pathname) && req.method === 'POST') {
         const analysisOnly = url.pathname === '/api/preparation/analysis';
         const limit = analysisOnly ? 128 * 1024 * 1024 : MAX_BYTES;
@@ -323,6 +383,6 @@ export function preparationPlugin() {
       const stream = createReadStream(file); stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res);
     } catch (error) { if (!res.headersSent && !res.destroyed) json({ error: error.message || 'No se pudo preparar la canción.' }, 500); }
   };
-  const configure = server => { server.middlewares.use(middleware); server.httpServer?.once('close', () => { clearInterval(cleanup); terminateProcess(transposer); terminateProcess(recogniser); for (const job of jobs.values()) { job.state = 'cancelled'; terminateProcess(job.child); } }); };
+  const configure = server => { server.middlewares.use(middleware); server.httpServer?.once('close', () => { clearInterval(cleanup); terminateProcess(transposer); terminateProcess(recogniser); if (embedder) terminateProcess(embedder.child); for (const job of jobs.values()) { job.state = 'cancelled'; terminateProcess(job.child); } }); };
   return { name: 'encore-preparation', configureServer: configure, configurePreviewServer: configure };
 }

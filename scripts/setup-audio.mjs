@@ -22,4 +22,5 @@ const runtime = gpu ? 'onnxruntime-gpu' : 'onnxruntime';
 run('uv', ['pip', 'install', '--python', python, '--reinstall-package', runtime, `${runtime}==1.30.0`]);
 run(python, ['scripts/audio/prepare.py', '--check']);
 run(python, ['scripts/audio/words.py', '--check']);
+run(python, ['scripts/audio/embed.py', '--check']);
 console.log(`Motor local listo${gpu ? ' con la gráfica NVIDIA' : ' para el procesador'}. Los modelos se descargan al usarlos por primera vez.`);

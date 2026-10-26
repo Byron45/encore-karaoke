@@ -23,6 +23,7 @@ Karaoke para practicar con tu propia música. Encore escucha tu voz por el micr�
 - **Tus intentos guardados.** Cada canción que cantas con micrófono queda en el navegador en cuanto termina (los últimos 60) para descargar su resultado más tarde, aunque no lo hayas descargado al terminar.
 - **Tu progreso.** Cómo va cada canción a lo largo de tus intentos, tu rango cómodo de voz y las frases que más te cuestan, con acceso directo para ensayarlas.
 - **Un tono a tu medida.** Con tu rango medido, el escenario te dice si una canción te queda alta o baja y cuántos semitonos moverla.
+- **Encuentra tu canción.** En la biblioteca, busca por ánimo o tema de la letra («desamor», «fiesta», «nostalgia»…) con un modelo de significado que corre en tu equipo, y filtra por idioma, década y dificultad para tu voz.
 - **Ensayo por frases.** Desde el resultado, repite solo la frase que se te resiste: suena desde un poco antes y solo cuentan sus notas.
 
 ![Editor de la biblioteca: letra completa y mapa de notas de una canción](docs/img/mapa-de-notas.png)
@@ -64,7 +65,16 @@ Pulsa **Ver demo** para ver el recorrido con una voz simulada. Después conecta 
 
 Con letra y sin notas también puedes cantar: la app reproduce tu audio y avanza la letra, sin puntuación.
 
-### 3. Ajusta la evaluación
+### 3. Encuentra qué cantar
+
+En **Biblioteca**, encima de tus canciones:
+
+- **Buscar por tema o ánimo** ordena tus canciones según lo que dice su letra. Escribe lo que buscas o pulsa un ánimo: Desamor, Romántica, Fiesta, Nostalgia, Épica o Divertida.
+- **Idioma**, **Década** y **Para tu voz** filtran la lista. La década sale de la identificación con MusicBrainz; «Para tu voz» necesita tu rango cómodo (un par de canciones cantadas) y separa las canciones cómodas en su tono, las cómodas cambiando el tono y las exigentes.
+
+La búsqueda lee la letra, no la música: una canción triste con ritmo alegre sale como triste.
+
+### 4. Ajusta la evaluación
 
 En el panel **Prepara tu voz**:
 
@@ -142,13 +152,14 @@ El mapa generado es **experimental**: puede cubrir solo parte de la canción, eq
   - MusicBrainz y LRCLIB, al pulsar buscar; se envían solo título y artista.
   - La descarga de los dos modelos, la primera vez que separas una canción.
   - La descarga del modelo de reconocimiento de voz (Whisper turbo, unos 1,5 GB; con el procesador, Whisper small, unos 460 MB), la primera vez que evalúas la letra.
+  - La descarga del modelo de significado (multilingual-e5-small, unos 470 MB), la primera vez que buscas por ánimo. Las letras se leen en el servidor de esta computadora; no salen de ella.
 
 ## Pruebas
 
 ```bash
-npm test             # 79 pruebas unitarias: detector, puntuación, mapas, letras, comparación de la letra, progreso y rango, cambio de tono, servicios
+npm test             # 84 pruebas unitarias: detector, puntuación, mapas, letras, comparación de la letra, progreso, búsqueda, cambio de tono, servicios
 npm run build        # comprobación de tipos y compilación
-npm run test:browser # 45 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
+npm run test:browser # 47 pruebas de extremo a extremo; requiere `npm run dev` activo y Microsoft Edge
 ```
 
 Las pruebas de navegador hacen pasar una voz sintética por el micrófono, el detector y la puntuación reales. No sustituyen una prueba con voz humana.
@@ -193,6 +204,7 @@ docs/           Notas técnicas, plan por etapas y evaluaciones
 - **El mapa automático es experimental** y suele quedar fragmentado en notas muy cortas.
 - **El cambio de tono necesita el servidor local** con el motor de audio instalado y llega a cinco semitonos; más allá la voz y los instrumentos suenan artificiales. Rubber Band puede adelantar o retrasar el sonido unos 20 ms, dentro del margen de tiempo de Relajada y Normal.
 - **La evaluación de la letra es experimental.** El reconocimiento de voz se equivoca más con el canto que con el habla: una palabra bien cantada puede oírse distinta, sobre todo con vocales largas, coros superpuestos o mucha música en los auriculares. Por eso pesa como mucho un 20 % y muestra qué oyó en cada línea. Solo funciona con letra sincronizada (LRC) y en el servidor local.
+- **La búsqueda por ánimo es experimental y lee solo la letra.** Con las 13 canciones de prueba, los botones de ánimo ponen primero la canción esperada en 5 de 6 casos, y una búsqueda escrita, en 10 de 15. Una canción cuya letra no dice claramente lo que transmite la música puede quedar lejos. La energía o el ritmo no se miden: el tempo automático se equivocaba al doble o a la mitad en las canciones probadas.
 - **Los servicios locales dependen de Vite** (`npm run dev` o `npm run preview`). Copiar solo `dist/` a un alojamiento estático no incluye las búsquedas ni la preparación.
 - **El historial guarda los últimos 60 intentos** con micrófono, sin gráficas de progreso. No hay pausa ni cola de canciones.
 
@@ -218,7 +230,7 @@ El plan original por etapas está en [docs/ETAPAS.md](docs/ETAPAS.md).
 
 React 19, TypeScript y Vite. Web Audio API para la captura y el análisis. Playwright para las pruebas de navegador.
 
-El motor opcional usa [python-audio-separator](https://github.com/nomadkaraoke/python-audio-separator) con dos modelos UVR-MDX-NET (Inst_HQ_3 y Kim_Vocal_2), [FFmpeg](https://ffmpeg.org) con [Rubber Band](https://breakfastquay.com/rubberband/) para el cambio de tono, [Whisper](https://github.com/openai/whisper) para reconocer la letra cantada, [torchcrepe](https://github.com/maxrmorrison/torchcrepe) y [librosa](https://librosa.org). Los iconos son de [Lucide](https://lucide.dev). Los metadatos proceden de MusicBrainz y las letras de LRCLIB; cada servicio tiene sus propias condiciones de uso.
+El motor opcional usa [python-audio-separator](https://github.com/nomadkaraoke/python-audio-separator) con dos modelos UVR-MDX-NET (Inst_HQ_3 y Kim_Vocal_2), [FFmpeg](https://ffmpeg.org) con [Rubber Band](https://breakfastquay.com/rubberband/) para el cambio de tono, [Whisper](https://github.com/openai/whisper) para reconocer la letra cantada, [multilingual-e5-small](https://huggingface.co/intfloat/multilingual-e5-small) con [Sentence Transformers](https://www.sbert.net) para la búsqueda por significado, [torchcrepe](https://github.com/maxrmorrison/torchcrepe) y [librosa](https://librosa.org). Los iconos son de [Lucide](https://lucide.dev). Los metadatos proceden de MusicBrainz y las letras de LRCLIB; cada servicio tiene sus propias condiciones de uso.
 
 Encore no incluye ni descarga canciones. Usa solo audio y letras que tengas derecho a utilizar.
 

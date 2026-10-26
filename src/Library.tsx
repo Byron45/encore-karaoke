@@ -9,6 +9,8 @@ import { createExampleSong } from './library-example';
 import { PreparationPanel } from './PreparationPanel';
 import { LyricsEditor } from './LyricsEditor';
 import { compileLyrics } from './lyrics';
+import { useSongFinder } from './SongFinder';
+import type { Range } from './progress';
 
 function saveFile(value: Blob, name: string) {
   const url = URL.createObjectURL(value), anchor = document.createElement('a');
@@ -17,7 +19,7 @@ function saveFile(value: Blob, name: string) {
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'No se pudo completar la operación.';
 const seconds = (value: number) => `${Math.floor(value / 60)}:${Math.floor(value % 60).toString().padStart(2, '0')}`;
 
-export function Library({ onChoose, onOriginal, onDirtyChange, onBusyChange, onStored }: { onChoose: (record: LibrarySong) => void; onOriginal: () => void; onDirtyChange: (value: boolean) => void; onBusyChange: (value: boolean) => void; onStored: (id: string, record: LibrarySong | null) => void }) {
+export function Library({ onChoose, onOriginal, onDirtyChange, onBusyChange, onStored, voice = null }: { onChoose: (record: LibrarySong) => void; onOriginal: () => void; onDirtyChange: (value: boolean) => void; onBusyChange: (value: boolean) => void; onStored: (id: string, record: LibrarySong | null) => void; voice?: Range | null }) {
   const [records, setRecords] = useState<LibrarySong[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -37,6 +39,7 @@ export function Library({ onChoose, onOriginal, onDirtyChange, onBusyChange, onS
     return () => { alive = false; };
   }, []);
   const current = records.find(record => record.id === selected);
+  const finder = useSongFinder(records, voice);
   function canLeave() { return !dirty || window.confirm('Hay cambios sin guardar. ¿Quieres descartarlos?'); }
   async function add(file?: File) {
     if (!canLeave()) return;
@@ -58,14 +61,15 @@ export function Library({ onChoose, onOriginal, onDirtyChange, onBusyChange, onS
     finally { setBusy(false); }
   }
   return <section className="library-page">
-    <div className="page-heading"><div><span className="eyebrow">ETAPA 02 · TU BIBLIOTECA</span><h1>Canciones a tu manera<span>.</span></h1><p>Guarda tu audio, trae la letra completa y empieza a cantar.</p></div><button className="primary-button" disabled={blocked || loading} onClick={() => input.current?.click()}><Upload size={17}/> Cargar audio</button><input ref={input} aria-label="Archivo de audio" type="file" hidden accept=".mp3,.wav,.ogg,.m4a,.flac,.webm" onChange={event => { const file = event.target.files?.[0]; if (file) void add(file); }}/></div>
+    <div className="page-heading"><div><span className="eyebrow">TU BIBLIOTECA</span><h1>Canciones a tu manera<span>.</span></h1><p>Guarda tu audio, trae la letra completa y empieza a cantar.</p></div><button className="primary-button" disabled={blocked || loading} onClick={() => input.current?.click()}><Upload size={17}/> Cargar audio</button><input ref={input} aria-label="Archivo de audio" type="file" hidden accept=".mp3,.wav,.ogg,.m4a,.flac,.webm" onChange={event => { const file = event.target.files?.[0]; if (file) void add(file); }}/></div>
     <div className="library-intro"><FileAudio size={21}/><p>Los archivos se guardan en este navegador, hasta 30 MB y 10 minutos por canción. Usa audio que tengas permiso de utilizar. MusicBrainz identifica la canción y LRCLIB puede aportar la letra con tiempos.</p></div>
     {error ? <div className="notice error" role="alert">{error}</div> : null}
     {notice ? <div className="notice" role="status">{notice}</div> : null}
     {loading || busy ? <p className="library-status" role="status">{loading ? 'Abriendo biblioteca…' : 'Preparando y guardando el audio…'}</p> : null}
     <div className="library-layout">
-      <aside className="library-list"><div className="card-heading"><span>TUS CANCIONES</span><span>{records.length}</span></div>
-        {records.map(record => <button disabled={blocked} key={record.id} className={`song-row ${selected === record.id ? 'selected' : ''}`} onClick={() => { if (selected === record.id) return; if (canLeave()) { setSelected(record.id); setDirty(false); setNotice(''); } }}><Music2 size={19}/><span><strong>{record.title}</strong><small>{record.artist || 'Artista sin indicar'} · {seconds(record.duration)}</small><em>{record.notes.length ? `${record.notes.length} notas · listo para cantar` : record.lyrics?.raw.trim() ? 'Letra lista · canto sin puntuación' : 'Faltan letras y notas'}</em></span></button>)}
+      <aside className="library-list"><div className="card-heading"><span>TUS CANCIONES</span><span>{finder.filtered ? `${finder.visible.length} de ${records.length}` : records.length}</span></div>
+        {records.length > 1 ? finder.controls : null}
+        {(records.length > 1 ? finder.visible : records).map(record => <button disabled={blocked} key={record.id} className={`song-row ${selected === record.id ? 'selected' : ''}`} onClick={() => { if (selected === record.id) return; if (canLeave()) { setSelected(record.id); setDirty(false); setNotice(''); } }}><Music2 size={19}/><span><strong>{record.title}</strong><small>{record.artist || 'Artista sin indicar'} · {seconds(record.duration)}</small>{finder.tags(record.id) ? <small className="song-tags">{finder.tags(record.id)}</small> : null}<em>{record.notes.length ? `${record.notes.length} notas · listo para cantar` : record.lyrics?.raw.trim() ? 'Letra lista · canto sin puntuación' : 'Faltan letras y notas'}</em></span></button>)}
         {!records.length && !loading ? <p className="library-empty">Tu biblioteca está vacía. Carga un archivo o empieza con nuestro ejemplo editable.</p> : null}
         <button className="text-button" disabled={blocked || loading} onClick={() => void add()}><Plus size={15}/> Añadir ejemplo editable</button>
         <button className="text-button" disabled={blocked} onClick={() => { if (canLeave()) onOriginal(); }}><ArrowLeft size={15}/> Volver al ejercicio original</button>

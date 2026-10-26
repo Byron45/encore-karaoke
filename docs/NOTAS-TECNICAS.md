@@ -266,6 +266,39 @@ El usuario cantó varias canciones nuevas con la revisión 2J, notó que la punt
 
 Desde 2K cada toma con micrófono y mapa de notas se guarda al terminar (`src/take-history.ts`) en una base IndexedDB propia, `encore-takes-v1`, separada de la biblioteca para no migrarla. Se guarda el mismo documento que da «Descargar resultado» (puntuación, trazo y mapa cantado; nunca audio), unos 150–200 kB por toma, y se conservan las 60 más recientes. «Tus intentos guardados», en el escenario, las lista (canción, fecha, exigencia, tono, ensayo de frase y puntos) para descargarlas o borrarlas una a una o todas. Las tomas de demostración no se guardan.
 
+## Encuentra tu canción · etapa 4
+
+El usuario aprobó la etapa 3 («Se ve bien»), probó las dos canciones con el tono sugerido y autorizó descargar el modelo de la búsqueda por ánimo.
+
+**Modelo.** `intfloat/multilingual-e5-small` (licencia MIT, 471 MB, 384 dimensiones), con `sentence-transformers` 6.2.0 en el motor. `scripts/audio/embed.py --serve` lo carga una vez en la gráfica y responde peticiones por líneas JSON. El servidor lo mantiene vivo y lo cierra tras 10 minutos sin uso. `POST /api/preparation/meaning` (mismo origen y token) acepta de 1 a 64 textos de hasta 8.000 caracteres, de tipo «query» o «passage», como pide e5.
+
+**Evaluación.** Se usaron las 13 canciones de la carpeta de música del usuario (letras de LRCLIB, que no se guardan en el repositorio) y 15 búsquedas con sus canciones esperadas, juzgadas por el tema de cada letra: desamor, romántica, fiesta, fantasía, humor, amor adictivo, viajes, consolar, nostalgia, una en inglés, melancolía, guerra, extrañar, crítica social y energía.
+
+| Cómo se representa una canción | Primera esperada en el 1.er puesto | MRR |
+| --- | --- | --- |
+| Título + letra completa (elegida) | 10 de 15 | 0,81 |
+| Letra completa | 8 de 15 | 0,72 |
+| Media de las 3 estrofas más parecidas | 9 de 15 | 0,73 |
+| Estrofa más parecida | 7 de 15 | 0,66 |
+| Centroide de estrofas | 6 de 15 | 0,58 |
+| Título + letra sin vocablos ni repeticiones | 10 de 15 | 0,81 |
+| e5-base, título + letra limpia (1,1 GB) | 12 de 15 | 0,86 |
+| e5-base, título + letra | 8 de 15 | 0,68 |
+
+Con título + letra, la esperada siempre quedó entre las tres primeras. e5-base no mejora de forma clara, pesa el doble y tarda más: se descartó y se borró. Ninguno de los dos asocia «Mi primer día sin ti» con el desamor. Las similitudes del modelo caen en una banda estrecha (0,75–0,87), así que la app no las muestra: indica cuánto destaca cada canción sobre la media de la biblioteca («Muy relacionada» a partir de una desviación típica, «Relacionada» a partir de 0,3).
+
+**Botones de ánimo.** Una búsqueda de una sola palabra funciona peor que una descripción. Los seis botones (Desamor, Romántica, Fiesta, Nostalgia, Épica, Divertida) buscan con una descripción escrita sin nombrar ninguna canción; una primera versión de «Desamor» que contenía el título de una de las canciones se descartó por hacer trampa con la propia biblioteca. Resultado: la esperada primero en 5 de 6, la otra segunda (MRR 0,92).
+
+**Filtros.** El idioma sale de la letra (`lyricsLanguage`), la década del año de la grabación en MusicBrainz y «Para tu voz» de `suggestKey`: cómoda en su tono, cómoda cambiando el tono (con cuántos semitonos) o exigente (se sale más de un semitono aun cambiándolo). Sin rango cómodo ese filtro espera.
+
+**Descartado: ritmo y energía.** El tempo de librosa sobre los MP3 del usuario dio el doble para «La leyenda del hada y el mago» (152 BPM) y una densidad de golpes absurda para «Kamikaze». Un filtro «lenta / rápida» con esos errores sería peor que no tenerlo, y la búsqueda por letra no capta la energía de la música («mucha energía» no puso primero a «Arrancacorazones»). Queda anotado como límite.
+
+**Interfaz y caché.** Encima de la lista de la biblioteca: búsqueda, botones de ánimo, filtros, el número de canciones que se muestran y un aviso cuando ninguna coincide, con un botón para quitar la búsqueda y los filtros. Los vectores de cada canción se guardan en una base aparte (`encore-search-v1`) y solo se recalculan si cambian el título o la letra. Con el modelo cargado, cada búsqueda tarda menos de 0,1 s. Sin el modelo, la búsqueda vuelve a coincidencias de palabras en el título, el artista o la letra y lo dice. Una búsqueda hecha antes de que el servidor confirme si el modelo está espera esa respuesta; antes caía por error a la búsqueda por palabras con la etiqueta de la otra.
+
+Comprobado con el servidor y el modelo reales sobre las 13 canciones en el navegador: el orden coincide con la evaluación en Python. Pruebas: `tests/song-search.test.mjs` (facetas, filtros, orden, palabras), el servicio en `tests/transpose.test.mjs` (permisos, límites, vectores normalizados, modelo cargado) y `tests/browser/finder.spec.ts` (orden, etiquetas, caché, filtros, sin coincidencias, botones de ánimo, búsqueda inmediata, sin modelo).
+
+`npm run audio:setup` falla si el servidor de la app está abierto, porque Windows no deja reemplazar el Python que usa el modelo cargado: hay que cerrarlo antes.
+
 ## Tu progreso y rango cómodo · etapa 3
 
 El usuario pidió pasar a las siguientes fases. De la etapa 3 («Repetir frases, rango cómodo, transponer pista y mapa, historial local») faltaban el rango cómodo y una vista de progreso.

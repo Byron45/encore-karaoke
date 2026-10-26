@@ -39,13 +39,13 @@ type Status = 'idle' | 'starting' | 'running' | 'finished';
 const stages = [
   { title: 'El primer escenario', status: 'PROBADA CONTIGO', description: 'Micrófono, melodía original, letras y puntuación local.', check: 'Notas conocidas, silencio, ruido, octavas y flujo en navegador.' },
   { title: 'Tu biblioteca', status: 'PROBADA CONTIGO', description: 'Carga de audio, mapa musical y búsqueda de metadatos con MusicBrainz.', check: 'Archivo y versión correctos; validación del mapa; errores y límites de la API.' },
-  { title: 'Una experiencia a tu medida', status: 'EN REVISIÓN', description: 'Ensayo por frases, cambio de tono, historial, tu progreso y tu rango cómodo.', check: 'Progreso guardado, transposición coherente y calibración en dispositivos reales.' },
-  { title: 'Encuentra tu canción', status: 'PRÓXIMAMENTE', description: 'Búsqueda por mood, idioma, década y dificultad.', check: 'Consultas de referencia y relevancia de resultados; respuestas sin coincidencias.' },
+  { title: 'Una experiencia a tu medida', status: 'PROBADA CONTIGO', description: 'Ensayo por frases, cambio de tono, historial, tu progreso y tu rango cómodo.', check: 'Progreso guardado, transposición coherente y calibración en dispositivos reales.' },
+  { title: 'Encuentra tu canción', status: 'EN REVISIÓN', description: 'Búsqueda por ánimo y tema de la letra, idioma, década y dificultad para tu voz.', check: 'Consultas de referencia y relevancia de resultados; respuestas sin coincidencias.' },
   { title: 'Cantar en compañía', status: 'PRÓXIMAMENTE', description: 'Salas por turnos, cola compartida y duelos.', check: 'Sincronización, reconexión y puntuaciones comparables entre participantes.' },
   { title: 'Más allá de las notas', status: 'ADELANTADA · EXPERIMENTAL', description: 'Evaluación experimental de palabras cantadas por frase.', check: 'Letras correctas e incorrectas, acentos y ruido; incertidumbre visible.' },
 ];
 // The stage being reviewed with the singer.
-const CURRENT_STAGE = 2;
+const CURRENT_STAGE = 3;
 
 /** What 10,000 points stand for in this result: the recording's own voice, the general scale or the tuner. */
 function scaleNote(summary: Summary, recording: RecordingReference | null | undefined, previousSeparator: boolean) {
@@ -320,7 +320,7 @@ export default function App() {
         <button aria-label="Tu progreso" title="Tu progreso" className={view === 'progress' ? 'nav-item selected' : 'nav-item'} onClick={() => navigate('progress')}><TrendingUp size={19}/> Tu progreso</button>
         <button aria-label="Nuestro proyecto" title="Nuestro proyecto" className={view === 'roadmap' ? 'nav-item selected' : 'nav-item'} onClick={() => navigate('roadmap')}><FlaskConical size={19}/> Nuestro proyecto <span className="tiny-tag">6</span></button>
       </nav>
-      <div className="sidebar-note"><span className="lab-icon"><FlaskConical size={19}/></span><strong>Todo empieza con tu voz.</strong><p>Estamos construyendo tu karaoke, una buena nota a la vez.</p><span className="version">ETAPA 03 <span>·</span> A TU MEDIDA</span></div>
+      <div className="sidebar-note"><span className="lab-icon"><FlaskConical size={19}/></span><strong>Todo empieza con tu voz.</strong><p>Estamos construyendo tu karaoke, una buena nota a la vez.</p><span className="version">ETAPA 04 <span>·</span> ENCUENTRA TU CANCIÓN</span></div>
       <button className="help-button" onClick={() => setHelp(value => !value)} aria-expanded={help}><CircleHelp size={18}/> Cómo funciona</button>
       <div className="profile"><div className="avatar">TÚ</div><div><strong>Tu estudio personal</strong><span>Práctica local</span></div><span className="local-mark" title="El audio se procesa en tu dispositivo"/></div>
     </aside>
@@ -357,10 +357,10 @@ export default function App() {
               {practise.length ? <section className="settings-card practice-card" aria-label="Frases para practicar"><div className="card-heading"><span>PARA PRACTICAR</span><Target size={17}/></div><p className="settings-hint">Las frases que peor te salen en tus últimos {practise[0].takes} {practise[0].takes === 1 ? 'intento' : 'intentos'} de esta canción.</p><ul>{practise.map(item => <li key={item.phrase}><div><strong>Frase {item.phrase + 1} · {item.accuracy} %</strong><q>{song.phrases[item.phrase]}</q></div><button className="text-button" disabled={busy} aria-label={`Ensayar la frase ${item.phrase + 1}`} onClick={() => start('microphone', item.phrase)}>Ensayar</button></li>)}</ul></section> : null}<div className="next-step"><div><Activity size={17}/><span>CONSTRUYENDO JUNTOS</span></div><strong>Tu biblioteca ya tiene escenario.</strong><p>Carga un audio y prepara sus letras y notas, o prueba el ejemplo editable.</p><button className="text-button" onClick={() => navigate('library')}>Abrir biblioteca <ArrowRight size={16}/></button></div>
             </aside>
           </div>
-          <footer><span>Hecho para cantar a tu manera.</span><span>ENCORE LAB <span> / </span> V0.3</span></footer>
-        </> : view === 'progress' ? <Progress takes={summaries} phrasesOf={phrasesOf} onSing={songId => void singFromProgress(songId)}/> : view === 'library' ? <Library onDirtyChange={setLibraryDirty} onBusyChange={setLibraryBusy} onStored={refreshSong} onChoose={record => selectSong(playable(record))} onOriginal={() => selectSong(originalSong)}/> : <>
+          <footer><span>Hecho para cantar a tu manera.</span><span>ENCORE LAB <span> / </span> V0.4</span></footer>
+        </> : view === 'progress' ? <Progress takes={summaries} phrasesOf={phrasesOf} onSing={songId => void singFromProgress(songId)}/> : view === 'library' ? <Library voice={range} onDirtyChange={setLibraryDirty} onBusyChange={setLibraryBusy} onStored={refreshSong} onChoose={record => selectSong(playable(record))} onOriginal={() => selectSong(originalSong)}/> : <>
           <div className="page-heading"><div><div className="eyebrow">PASO A PASO, CONTIGO</div><h1>De la primera nota<br/>a tu propio karaoke<span>.</span></h1><p>Cada etapa tiene una prueba técnica y una revisión contigo.</p></div></div>
-          <div className="roadmap-intro"><FlaskConical size={23}/><div><strong>Ahora: una experiencia a tu medida</strong><p>Tu biblioteca ya prepara pistas, mapas y letras. En esta etapa revisamos el ensayo por frases, el cambio de tono, tu progreso y la sugerencia de tono según tu rango cómodo.</p></div><button className="secondary-button" onClick={() => navigate('progress')}>Ver tu progreso <ArrowRight size={16}/></button></div>
+          <div className="roadmap-intro"><FlaskConical size={23}/><div><strong>Ahora: encuentra tu canción</strong><p>Tu progreso y tu rango cómodo ya funcionan. En esta etapa revisamos el buscador de la biblioteca: por ánimo o tema de la letra, idioma, década y dificultad para tu voz.</p></div><button className="secondary-button" onClick={() => navigate('library')}>Ir a la biblioteca <ArrowRight size={16}/></button></div>
           <div className="roadmap">{stages.map((stage, i) => <section key={stage.title} className={i === CURRENT_STAGE ? 'roadmap-row current' : 'roadmap-row'}><span className="roadmap-number">0{i + 1}</span><div><span className="eyebrow">{stage.status}</span><h2>{stage.title}</h2><p>{stage.description}</p><div className="acceptance"><Check size={15}/><span>Evaluador: {stage.check}</span></div></div>{i === CURRENT_STAGE ? <span className="roadmap-badge">Actual</span> : null}</section>)}</div>
           <section className="musicbrainz-note"><ListMusic size={24}/><div><h2>MusicBrainz tiene un lugar aquí.</h2><p>Ya puedes buscar artistas, grabaciones y versiones desde tu biblioteca. MusicBrainz aporta metadatos; tú cargas el audio y preparas las letras y notas.</p><a href="https://musicbrainz.org/doc/MusicBrainz_API" target="_blank" rel="noreferrer">Consultar documentación oficial <ArrowRight size={14}/></a></div></section>
         </>}

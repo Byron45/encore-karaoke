@@ -1,4 +1,10 @@
-# Punto de continuación · etapa 3 entregada para revisión
+# Punto de continuación · etapa 4 entregada para revisión
+
+25 de octubre de 2026. El usuario aprobó la etapa 3, probó dos canciones con el tono sugerido (los resultados están en el historial de su navegador; no los descargó todavía) y autorizó el modelo de la búsqueda por ánimo. Etapa 4: buscador en la biblioteca, por ánimo o tema de la letra con `intfloat/multilingual-e5-small` (471 MB, en la gráfica), seis botones de ánimo y filtros por idioma, década y dificultad para su voz. Evaluación con sus 13 canciones: 10 de 15 búsquedas escritas y 5 de 6 ánimos ponen primero la canción esperada. El ritmo o la energía se descartaron porque el tempo automático fallaba. Detalle en `docs/NOTAS-TECNICAS.md`, sección «Encuentra tu canción».
+
+Pendiente: que el usuario descargue y envíe las dos tomas con el tono cambiado, y pruebe el buscador con su biblioteca. Después, la etapa 5 (cantar en compañía).
+
+## Etapa 3 entregada
 
 25 de octubre de 2026. El usuario pidió pasar a las siguientes fases. Se completó la etapa 3: vista **Tu progreso** (gráfica por canción, tabla de intentos, minutos cantados), **rango cómodo** a partir de los histogramas de voz de cada toma (el suyo: Mi3–Mi4), **tono sugerido** por canción en el escenario con botón para aplicarlo, y tarjeta **Para practicar** con las frases de peor media. El historial conserva el resumen de los intentos antiguos para el progreso. Detalle en `docs/NOTAS-TECNICAS.md`, sección «Tu progreso y rango cómodo».
 
